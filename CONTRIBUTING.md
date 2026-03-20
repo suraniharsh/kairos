@@ -78,14 +78,14 @@ pnpm dev
 
    Use one of the following prefixes:
 
-   | Prefix | Purpose |
-   |--------|---------|
-   | `feat/` | New feature |
-   | `fix/` | Bug fix |
-   | `docs/` | Documentation changes |
-   | `refactor/` | Code refactoring |
-   | `test/` | Adding or updating tests |
-   | `chore/` | Maintenance tasks |
+   | Prefix      | Purpose                  |
+   | ----------- | ------------------------ |
+   | `feat/`     | New feature              |
+   | `fix/`      | Bug fix                  |
+   | `docs/`     | Documentation changes    |
+   | `refactor/` | Code refactoring         |
+   | `test/`     | Adding or updating tests |
+   | `chore/`    | Maintenance tasks        |
 
 3. **Make your changes** and commit them (see [Code Style](#code-style)).
 
