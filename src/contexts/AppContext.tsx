@@ -333,16 +333,20 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
       initialLoadDone.current = true;
 
       // Check for updates after initial load
-      checkForUpdate().then((info) => {
-        if (info.hasUpdate) {
-          // Only show dialog if this version hasn't been skipped
-          const skippedVersion = data.settings?.skippedVersion;
-          if (skippedVersion !== info.latestVersion) {
-            setUpdateInfo(info);
-            setShowUpdateDialog(true);
+      checkForUpdate()
+        .then((info) => {
+          if (info.hasUpdate) {
+            // Only show dialog if this version hasn't been skipped
+            const skippedVersion = data.settings?.skippedVersion;
+            if (skippedVersion !== info.latestVersion) {
+              setUpdateInfo(info);
+              setShowUpdateDialog(true);
+            }
           }
-        }
-      });
+        })
+        .catch((err) => {
+          console.error('Failed to check for updates:', err);
+        });
     }
   }, [data]);
 
