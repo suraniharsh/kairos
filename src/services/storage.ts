@@ -10,7 +10,7 @@ const getStoragePath = (): string => {
   if (platform === 'darwin') {
     return `${home}/Library/Application Support/ritual/data.json`;
   } else if (platform === 'linux') {
-    return `${home}/.config/ritual/data.json`;
+    return `${home}/.local/share/ritual/data.json`;
   } else if (platform === 'win32') {
     const appData = process.env.APPDATA || String.raw`${home}\AppData\Roaming`;
     return String.raw`${appData}\ritual\data.json`;

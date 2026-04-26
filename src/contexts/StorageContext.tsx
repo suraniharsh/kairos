@@ -7,7 +7,7 @@ interface StorageContextType {
   isLoading: boolean;
   error: Error | null;
   save: (data: StorageSchema) => Promise<void>;
-  saveNow: () => Promise<void>;
+  saveNow: (data?: StorageSchema) => Promise<void>;
 }
 
 const StorageContext = createContext<StorageContextType | undefined>(undefined);
@@ -47,8 +47,9 @@ export const StorageProvider: React.FC<StorageProviderProps> = ({ children }) =>
 
   // Debounced save keeps disk writes low without slowing UI feedback
   const save = useCallback(async (newData: StorageSchema) => {
-    setData(newData);
+    // Update ref synchronously to ensure latest data is always available
     latestDataRef.current = newData;
+    setData(newData);
 
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
@@ -64,13 +65,14 @@ export const StorageProvider: React.FC<StorageProviderProps> = ({ children }) =>
   }, []);
 
   // Immediate save (for exit)
-  const saveNow = useCallback(async () => {
+  const saveNow = useCallback(async (dataToSave?: StorageSchema) => {
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
     }
-    if (latestDataRef.current) {
+    const data = dataToSave || latestDataRef.current;
+    if (data) {
       try {
-        await storageService.save(latestDataRef.current);
+        await storageService.save(data);
       } catch (err) {
         console.error('Failed to save:', err);
       }

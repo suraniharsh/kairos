@@ -58,7 +58,7 @@ interface AppContextType {
   ) => void;
   clearTimelineForDate: (dateStr: string) => void;
   isModalOpen: boolean;
-  saveNow: () => Promise<void>;
+  saveNow: (data?: StorageSchema) => Promise<void>;
   pushUndoableAction: (actionType: UndoActionType) => void;
   performUndo: () => void;
   canUndo: boolean;
