@@ -135,13 +135,20 @@ export const TasksPane: React.FC = () => {
 
   // Enable input focus on the next frame when entering input mode
   useEffect(() => {
+    let timer: NodeJS.Timeout | undefined;
+
     if (isInputMode && !inputFocusReady) {
       // Use setTimeout to delay focus until after the current event is processed
-      const timer = setTimeout(() => setInputFocusReady(true), 0);
-      return () => clearTimeout(timer);
+      timer = setTimeout(() => setInputFocusReady(true), 0);
     } else if (!isInputMode && inputFocusReady) {
       setInputFocusReady(false);
     }
+
+    return () => {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    };
   }, [isInputMode, inputFocusReady]);
 
   // Reset selection when day changes
