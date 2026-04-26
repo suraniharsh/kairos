@@ -71,7 +71,8 @@ export const UndoProvider: React.FC<UndoProviderProps> = ({ children }) => {
   const undo = useCallback((): UndoAction | null => {
     let action: UndoAction | null = null;
     setUndoStack((prev) => {
-      action = prev.at(-1) ?? null;
+      const lastAction = prev.at(-1);
+      action = lastAction ?? null;
       if (!action) {
         return prev;
       }
