@@ -1,5 +1,6 @@
 import type { Task, TaskTree } from '../types/task';
-import { getDateString } from '../utils/date';
+import { getDateString, parseDateString } from '../utils/date';
+import { isBefore } from 'date-fns';
 import { logger } from '../utils/logger';
 
 /**
@@ -74,10 +75,10 @@ export class TaskMoveService {
    */
   getDatesWithUnfinishedTasks(tasks: TaskTree, beforeDate: Date): string[] {
     const dates: string[] = [];
-    const beforeDateStr = getDateString(beforeDate);
 
     for (const [dateStr, taskList] of Object.entries(tasks)) {
-      if (dateStr < beforeDateStr) {
+      const currentDate = parseDateString(dateStr);
+      if (isBefore(currentDate, beforeDate)) {
         const unfinished = this.getUnfinishedTasks(taskList);
         if (unfinished.length > 0) {
           dates.push(dateStr);
