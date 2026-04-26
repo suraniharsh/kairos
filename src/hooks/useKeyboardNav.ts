@@ -135,17 +135,21 @@ export const useKeyboardNav = () => {
       }
 
       // Pane switching
-      if (input === '1') {
+      if (key.tab) {
+        if (key.shift) {
+          logger.log('Switching to timeline pane');
+          setActivePane('timeline');
+        } else {
+          logger.log('Switching to tasks pane');
+          setActivePane('tasks');
+        }
+      } else if (input === '1') {
         logger.log('Switching to calendar pane');
         setActivePane('calendar');
-      }
-
-      if (input === '2' || (key.tab && !key.shift)) {
+      } else if (input === '2') {
         logger.log('Switching to tasks pane');
         setActivePane('tasks');
-      }
-
-      if (input === '3' || (key.tab && key.shift)) {
+      } else if (input === '3') {
         logger.log('Switching to timeline pane');
         setActivePane('timeline');
       }
