@@ -83,10 +83,24 @@ export class StorageService {
     return this.filePath;
   }
 
+  // Remove duplicate IDs and tasks that are leaked children (have parentId set at top level)
+  private deduplicateTopLevel(tasks: any[]): any[] {
+    const seen = new Set<string>();
+    return tasks.reduce((acc: any[], task: any) => {
+      if (!seen.has(task.id) && !task.parentId) {
+        seen.add(task.id);
+        acc.push(task);
+      }
+      return acc;
+    }, []);
+  }
+
   public hydrateDates(data: any): StorageSchema {
     if (data.tasks) {
       Object.keys(data.tasks).forEach((date) => {
-        data.tasks[date] = data.tasks[date].map((task: any) => this.hydrateTask(task));
+        data.tasks[date] = this.deduplicateTopLevel(
+          data.tasks[date].map((task: any) => this.hydrateTask(task)),
+        );
       });
     }
 
@@ -126,7 +140,9 @@ export class StorageService {
       ...data,
       tasks: Object.keys(data.tasks).reduce(
         (acc, date) => {
-          acc[date] = data.tasks[date].map((task) => this.serializeTask(task));
+          acc[date] = this.deduplicateTopLevel(data.tasks[date]).map((task) =>
+            this.serializeTask(task),
+          );
           return acc;
         },
         {} as Record<string, any>,

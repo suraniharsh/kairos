@@ -1,6 +1,5 @@
 import type { Task, TaskTree } from '../types/task';
-import { getDateString, parseDateString } from '../utils/date';
-import { isBefore } from 'date-fns';
+import { getDateString } from '../utils/date';
 import { logger } from '../utils/logger';
 
 /**
@@ -33,7 +32,9 @@ export class TaskMoveService {
    */
   moveUnfinishedTasksToDate(tasks: TaskTree, fromDate: string, toDate: string): TaskTree {
     const sourceTasks = tasks[fromDate] || [];
-    const unfinishedTasks = this.getUnfinishedTasks(sourceTasks);
+    // Only move top-level unfinished tasks; their children are carried along via the children array.
+    // Using getUnfinishedTasks (which recurses) would duplicate nested tasks as standalone top-level entries.
+    const unfinishedTasks = sourceTasks.filter((task) => task.state === 'todo');
 
     if (unfinishedTasks.length === 0) {
       logger.log(`No unfinished tasks to move from ${fromDate} to ${toDate}`);
@@ -76,11 +77,11 @@ export class TaskMoveService {
   getDatesWithUnfinishedTasks(tasks: TaskTree, beforeDate: Date): string[] {
     const dates: string[] = [];
 
+    const beforeDateStr = getDateString(beforeDate);
     for (const [dateStr, taskList] of Object.entries(tasks)) {
-      const currentDate = parseDateString(dateStr);
-      if (isBefore(currentDate, beforeDate)) {
-        const unfinished = this.getUnfinishedTasks(taskList);
-        if (unfinished.length > 0) {
+      if (dateStr < beforeDateStr) {
+        const hasUnfinishedTopLevel = taskList.some((task) => task.state === 'todo');
+        if (hasUnfinishedTopLevel) {
           dates.push(dateStr);
         }
       }
