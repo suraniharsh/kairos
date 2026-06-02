@@ -167,7 +167,36 @@ pub const MATRIX: Theme = Theme {
     matched: rgb(0xff, 0xd6, 0x6e),
 };
 
-pub const BUILT_IN: &[&Theme] = &[&MUTED, &DAWN, &NORD, &MATRIX];
+pub const TERMINAL: Theme = Theme {
+    name: "Terminal",
+    bg: Color::Reset,
+    panel: Color::Reset,
+    border: Color::DarkGray,
+    fg: Color::Reset,
+    dim: Color::DarkGray,
+    accent: Color::Cyan,
+    cursor: Color::DarkGray,
+    selection: Color::DarkGray,
+    statusbar: Color::Reset,
+    status_fg: Color::Reset,
+    mode_fg: Color::Black,
+    mode_bg: Color::Cyan,
+    pri_a: Color::Red,
+    pri_b: Color::Yellow,
+    pri_c: Color::Green,
+    pri_d: Color::Blue,
+    pri_other: Color::Magenta,
+    project: Color::Green,
+    context: Color::Yellow,
+    due: Color::Yellow,
+    overdue: Color::Red,
+    today: Color::Red,
+    done: Color::DarkGray,
+    selected: Color::DarkGray,
+    matched: Color::Yellow,
+};
+
+pub const BUILT_IN: &[&Theme] = &[&MUTED, &DAWN, &NORD, &MATRIX, &TERMINAL];
 
 static REGISTRY: OnceLock<Vec<&'static Theme>> = OnceLock::new();
 
@@ -500,6 +529,15 @@ matched = #b58900
             std::process::id(),
             std::thread::current().id()
         ))
+    }
+
+    #[test]
+    fn terminal_theme_uses_terminal_palette() {
+        assert_eq!(TERMINAL.bg, Color::Reset);
+        assert_eq!(TERMINAL.panel, Color::Reset);
+        assert_eq!(TERMINAL.fg, Color::Reset);
+        assert_eq!(TERMINAL.pri_a, Color::Red);
+        assert_eq!(BUILT_IN.last().map(|t| t.name), Some("Terminal"));
     }
 
     #[test]

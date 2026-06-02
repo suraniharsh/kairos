@@ -1,7 +1,7 @@
 # tuxedo
 
 A fast, keyboard-driven terminal UI for [todo.txt](http://todotxt.org/).
-Vim-style bindings, atomic writes, instant external-edit detection, and four
+Vim-style bindings, atomic writes, instant external-edit detection, and five
 hand-tuned themes — all in a single static binary.
 
 ```sh
@@ -26,7 +26,7 @@ brew install webstonehq/tap/tuxedo
 - **Sibling-file archive.** `A` moves completed tasks to `done.txt` next to your file, atomically.
 - **Filter, sort, multi-select.** Cycle by `+project` or `@context`, sort by priority / due / file order, and bulk-complete or bulk-delete in visual mode.
 - **Saved searches.** Name the active `/`-search with `fs`, then recall it any time by cycling saved filters with `ff`. Stored as plain `filter.<name>` lines in the config — hand-editable like everything else.
-- **Four themes, three densities.** Cycle with `T` and `D`. Choices persist across runs.
+- **Five themes, three densities.** Cycle with `T` and `D`. Choices persist across runs.
 - **No daemon, no database, no cloud.** One file in, one file out.
 
 ## Screens
@@ -50,7 +50,7 @@ brew install webstonehq/tap/tuxedo
 
 ## Themes
 
-`T` cycles through four built-in themes.
+`T` cycles through five built-in themes, including Terminal, which respects your terminal palette.
 
 | Muted Slate (default) | Dawn |
 | --- | --- |
