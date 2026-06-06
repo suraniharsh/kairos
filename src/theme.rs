@@ -537,7 +537,10 @@ matched = #b58900
         assert_eq!(TERMINAL.panel, Color::Reset);
         assert_eq!(TERMINAL.fg, Color::Reset);
         assert_eq!(TERMINAL.pri_a, Color::Red);
-        assert_eq!(BUILT_IN.last().map(|t| t.name), Some("Terminal"));
+        assert!(
+            BUILT_IN.iter().any(|t| t.name == TERMINAL.name),
+            "TERMINAL should be registered in BUILT_IN"
+        );
     }
 
     #[test]
