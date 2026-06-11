@@ -257,6 +257,25 @@ config-file flag; configure paths with the environment variables above.
 
 ## Keybindings
 
+Custom normal-mode keybindings can be added in
+`${XDG_CONFIG_HOME:-$HOME/.config}/tuxedo/keybinds.toml`:
+
+```toml
+[normal]
+begin_add = ["N", "Ctrl-n"]
+open_command_palette = "Ctrl-P"
+open_help = "F1"
+quit = "ZZ"
+```
+
+Custom bindings are checked before the defaults. The default bindings remain
+available unless the same key or two-key chord is bound to another action in
+the file. Action names are snake_case, matching the names in the command
+palette where possible: `toggle_complete`, `pick_project`,
+`open_theme_picker`, and so on. Key names can be single characters, two-key
+chords like `ZZ`, modifier forms like `Ctrl-n` / `Alt-x`, named keys like
+`Esc`, `Enter`, `Tab`, arrows, `Page-Up`, `Page-Down`, or `F1` through `F24`.
+
 ### Navigation
 
 | Key | Action |
