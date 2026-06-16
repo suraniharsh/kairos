@@ -22,6 +22,7 @@ pub mod status;
 pub mod task_row;
 pub mod theme_picker;
 pub mod title;
+pub mod welcome;
 
 // Pane and overlay sizing. Promoted out of inline literals so the three
 // `MIN_BODY_W` references below stay in sync, and so tweaking a sidebar
@@ -162,6 +163,11 @@ pub fn draw(frame: &mut Frame, app: &App) {
             let r = centered_in(area, w, h);
             frame.render_widget(Clear, r);
             theme_picker::render(frame, r, app);
+        }
+        Mode::Welcome => {
+            let r = centered_in(area, welcome::WIDTH, welcome::HEIGHT);
+            frame.render_widget(Clear, r);
+            welcome::render(frame, r, app);
         }
         _ => {}
     }

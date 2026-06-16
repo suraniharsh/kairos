@@ -445,6 +445,20 @@ fn empty_state() {
     snapshot_app("empty_state", &app);
 }
 
+#[test]
+fn welcome_overlay() {
+    // First-run prompt: empty backdrop, welcome box centered on top.
+    let mut app = App::new(
+        PathBuf::from(FIXTURE_PATH),
+        String::new(),
+        "2026-05-06".to_string(),
+        Config::default(),
+    );
+    app.prefs.density = Density::Compact;
+    app.mode = Mode::Welcome;
+    snapshot_app("welcome_overlay", &app);
+}
+
 /// Build a synthetic todo body with N rows so the list overflows any
 /// reasonable viewport. Each row gets a unique label we can search for in the
 /// rendered buffer.

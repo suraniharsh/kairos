@@ -176,8 +176,10 @@ Both the TUI and the CLI resolve the todo file the same way, in order:
 2. `$TODO_FILE`, if set.
 3. `$TODO_DIR/todo.txt`, if `$TODO_DIR` is set.
 4. `./todo.txt` in the current directory, if it exists.
-5. Otherwise a sample todo.txt in the system temp directory, so you can poke
-   around without committing to a path.
+5. Otherwise the TUI shows a first-run prompt — press `c` to create
+   `./todo.txt` here, or `s` to open a sample todo.txt in the system temp
+   directory so you can poke around without committing to a path. (The
+   one-shot CLI is non-interactive and uses the sample directly.)
 
 The archive file is `$DONE_FILE` if set, otherwise a sibling `done.txt` next
 to the todo file. The file (and any missing parent directories) is created on

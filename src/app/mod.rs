@@ -179,6 +179,20 @@ impl App {
         app
     }
 
+    /// Rebind the App to a different on-disk file at runtime, replacing the
+    /// store (tasks, archive, history, external-change baseline) with a fresh
+    /// one for `file_path`/`done_path` loaded from `body`. Prefs, saved
+    /// filters, theme, and config live on `App` and are left intact. Used by
+    /// the first-run welcome prompt to swap from the placeholder file to the
+    /// chosen one. Resets the cursor and recomputes the visible cache.
+    pub fn open_file(&mut self, file_path: PathBuf, done_path: PathBuf, body: String) {
+        let today = self.store.today().to_string();
+        self.store = Store::new_with_done(file_path.clone(), done_path, body, today);
+        self.file_path = file_path;
+        self.cursor = 0;
+        self.recompute_visible();
+    }
+
     /// Idempotent: bind the capture server on first call, then store
     /// the [`ShareInfo`] so subsequent calls just re-show the overlay.
     ///

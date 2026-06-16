@@ -28,7 +28,9 @@ fn main() -> Result<()> {
         std::process::exit(code);
     }
     let arg = argv.first().cloned();
-    let path = match arg.as_deref() {
+    // `start_mode` is `Welcome` only on a true first run (no target and no
+    // ./todo.txt); every other entry opens straight into Normal.
+    let (path, start_mode) = match arg.as_deref() {
         Some("--help") | Some("-h") => {
             print_usage();
             return Ok(());
@@ -41,13 +43,18 @@ fn main() -> Result<()> {
             update::run()?;
             return Ok(());
         }
-        Some("--sample") => cli::sample_path()?,
+        Some("--sample") => (cli::sample_path()?, Mode::Normal),
         Some(s) if s.starts_with('-') => {
             eprintln!("tuxedo: unknown option: {s}");
             eprintln!("try `tuxedo --help`");
             std::process::exit(2);
         }
-        _ => cli::resolve_path(arg)?,
+        _ => match cli::resolve_target(arg)? {
+            cli::Target::File(p) => (p, Mode::Normal),
+            // Open into the welcome prompt backed by an as-yet-uncreated
+            // ./todo.txt; `handle_welcome` materializes the file the user picks.
+            cli::Target::FirstRun => (std::path::PathBuf::from("todo.txt"), Mode::Welcome),
+        },
     };
     // A freshly-created file is empty; otherwise read it. We accept NotFound
     // (race with deletion between resolve_path and now) as "empty file" but
@@ -80,6 +87,7 @@ fn main() -> Result<()> {
     let done = cli::done_path(&path);
     let mut app_state = App::new_with_done(path.clone(), done, body, today, cfg);
     app_state.config_path = Config::path();
+    app_state.mode = start_mode;
     // Surface theme-load problems on the first frame. Flash is single-line,
     // so collapse multiple warnings to a count and let the user investigate
     // their themes directory.
@@ -108,8 +116,12 @@ fn main() -> Result<()> {
     let _ = ratatui::crossterm::execute!(io::stdout(), ratatui::crossterm::terminal::SetTitle(""));
     // Print the file path *after* restoring the terminal so the message
     // survives in the user's scrollback rather than being eaten by the
-    // alt-screen.
-    eprintln!("tuxedo: {}", path.display());
+    // alt-screen. Read it back from the app: the welcome prompt may have
+    // rebound to the sample. Skip the line if the user quit the welcome
+    // prompt without choosing — no file was opened.
+    if app_state.mode != Mode::Welcome {
+        eprintln!("tuxedo: {}", app_state.file_path.display());
+    }
     result
 }
 
@@ -118,8 +130,9 @@ fn print_usage() {
     println!("       tuxedo <command> [args]       run a one-shot command");
     println!("       tuxedo update");
     println!();
-    println!("Without FILE or a command, opens ./todo.txt if present, otherwise");
-    println!("a sample todo.txt in the system temp dir, in the interactive TUI.");
+    println!("Without FILE or a command, opens ./todo.txt if present; otherwise");
+    println!("prompts to create ./todo.txt here or open a sample todo.txt, in");
+    println!("the interactive TUI.");
     println!();
     println!("Inside the TUI, press `s` to expose a phone-friendly capture");
     println!("endpoint on your LAN and show a QR code for it. Captures land");
@@ -254,7 +267,32 @@ fn handle_key(app: &mut App, key: KeyEvent, keybinds: &KeyBindings) {
         Mode::PickTheme => handle_pick_theme(app, key),
         Mode::CommandPalette => handle_command_palette(app, key),
         Mode::Share => handle_share(app, key),
+        Mode::Welcome => handle_welcome(app, key),
         Mode::Normal | Mode::Visual => handle_normal(app, key, keybinds),
+    }
+}
+
+/// First-run welcome prompt. `c` creates `./todo.txt` (the App's current
+/// `file_path`) and edits it; `s` opens the bundled sample; `q`/`Esc` quits
+/// without creating anything. Any other key is ignored so a stray press
+/// doesn't silently pick an option.
+fn handle_welcome(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Char('c') => match cli::ensure_file(app.file_path.clone()) {
+            Ok(_) => app.mode = Mode::Normal,
+            Err(e) => app.flash(format!("could not create {}: {e}", app.file_path.display())),
+        },
+        KeyCode::Char('s') => match cli::sample_path() {
+            Ok(sample) => {
+                let done = cli::done_path(&sample);
+                let body = std::fs::read_to_string(&sample).unwrap_or_default();
+                app.open_file(sample, done, body);
+                app.mode = Mode::Normal;
+            }
+            Err(e) => app.flash(format!("could not open sample: {e}")),
+        },
+        KeyCode::Char('q') | KeyCode::Esc => app.should_quit = true,
+        _ => {}
     }
 }
 
@@ -1069,6 +1107,63 @@ mod tests {
 
     fn resolve(app: &mut App, key: KeyEvent) -> Option<Action> {
         resolve_normal_key(app, key, &KeyBindings::default())
+    }
+
+    fn welcome_app(name: &str) -> (App, std::path::PathBuf) {
+        let path = std::env::temp_dir().join(format!(
+            "tuxedo-welcome-{name}-{}-{:?}.txt",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let mut app = App::new(
+            path.clone(),
+            String::new(),
+            "2026-05-07".into(),
+            Config::default(),
+        );
+        app.mode = Mode::Welcome;
+        (app, path)
+    }
+
+    #[test]
+    fn welcome_c_creates_cwd_file_and_enters_normal() {
+        let (mut app, path) = welcome_app("c");
+        assert!(!path.exists(), "precondition: file must not exist yet");
+        handle_welcome(&mut app, key('c'));
+        assert!(path.exists(), "`c` must create the target file");
+        assert_eq!(app.mode, Mode::Normal);
+        assert_eq!(app.file_path, path, "`c` keeps the cwd target path");
+        assert!(!app.should_quit);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn welcome_s_opens_sample_and_enters_normal() {
+        let (mut app, path) = welcome_app("s");
+        handle_welcome(&mut app, key('s'));
+        assert_eq!(app.mode, Mode::Normal);
+        assert_ne!(app.file_path, path, "`s` rebinds away from the cwd target");
+        assert!(
+            app.file_path.ends_with("tuxedo-sample.txt"),
+            "`s` opens the bundled sample, got {:?}",
+            app.file_path
+        );
+        assert!(!app.tasks().is_empty(), "sample must load tasks");
+        assert!(!path.exists(), "`s` must not create the cwd file");
+    }
+
+    #[test]
+    fn welcome_q_and_esc_quit_without_creating_anything() {
+        let (mut app, path) = welcome_app("q");
+        handle_welcome(&mut app, key('q'));
+        assert!(app.should_quit, "`q` must quit");
+        assert!(!path.exists(), "`q` must not create a file");
+
+        let (mut app, path) = welcome_app("esc");
+        handle_welcome(&mut app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(app.should_quit, "Esc must quit");
+        assert!(!path.exists(), "Esc must not create a file");
     }
 
     fn build_app() -> App {

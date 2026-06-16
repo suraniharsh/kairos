@@ -220,7 +220,30 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use crate::app::test_support::build_app;
+    use crate::app::test_support::{build_app, test_path};
+
+    #[test]
+    fn open_file_rebinds_path_body_and_resets_cursor() {
+        let mut app = build_app("old one\nold two\nold three\n");
+        app.cursor = 2;
+        let new_path = test_path();
+        let done = new_path.parent().expect("temp parent").join("done.txt");
+
+        app.open_file(new_path.clone(), done, "fresh task\n".into());
+
+        assert_eq!(
+            app.file_path, new_path,
+            "file_path must point at the new file"
+        );
+        assert_eq!(app.tasks().len(), 1, "tasks must reflect the new body");
+        assert_eq!(app.tasks()[0].raw, "fresh task");
+        assert_eq!(
+            app.visible_indices().len(),
+            1,
+            "visible cache must be recomputed"
+        );
+        assert_eq!(app.cursor, 0, "cursor must reset for the new file");
+    }
 
     #[test]
     fn add_project_rejects_whitespace_in_name() {

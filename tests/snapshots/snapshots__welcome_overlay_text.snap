@@ -1,0 +1,37 @@
+---
+source: tests/snapshots.rs
+assertion_line: 226
+expression: buffer_to_text(&buf)
+---
+ FILTERS                   ▶▮◀ /tmp/tuxedo-snapshot.txt  •  0 task DETAIL                           
+                                                                                                    
+ PROJECTS                                                          (no task)                        
+   tag with +project                                                                                
+                                                                                                    
+ CONTEXTS                                                                                           
+   tag with @context                                                                                
+                                                                                                    
+                      ┌ tuxedo · welcome ────────────────────────────────────┐                      
+                      │                    ██          ██                    │                      
+                      │                    ████  ██  ████                    │                      
+                      │                    ██████████████                    │                      
+                      │                    ████  ██  ████                    │                      
+                      │                    ██          ██                    │                      
+                      │                                                      │                      
+                      │  no todo.txt in this folder yet                      │                      
+                      │                                                      │                      
+                      │   c   create ./todo.txt here                         │                      
+                      │   s   open the sample                                │                      
+                      │   q   quit                                           │                      
+                      │                                                      │                      
+                      │                                                      │                      
+                      │                                                      │                      
+                      └──────────────────────────────────────────────────────┘                      
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+ WELCOME   c create ./todo.txt · s open sample · q quit       0 open · 2026-05-06 · tuxedo 2026.6.3
