@@ -107,13 +107,12 @@ fn main() -> Result<()> {
     // and operating systems, shortening long paths to fit a fixed budget.
     let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
     let title = ui::title::terminal_title(&path, home.as_deref(), ui::title::DEFAULT_BUDGET);
-    let _ =
-        ratatui::crossterm::execute!(io::stdout(), ratatui::crossterm::terminal::SetTitle(title));
+    let _ = crossterm::execute!(io::stdout(), crossterm::terminal::SetTitle(title));
     let result = run(terminal, &mut app_state, &keybinds);
     ratatui::restore();
     // Clear the title on exit so the shell retitles on its next prompt rather
     // than leaving `tuxedo …` behind.
-    let _ = ratatui::crossterm::execute!(io::stdout(), ratatui::crossterm::terminal::SetTitle(""));
+    let _ = crossterm::execute!(io::stdout(), crossterm::terminal::SetTitle(""));
     // Print the file path *after* restoring the terminal so the message
     // survives in the user's scrollback rather than being eaten by the
     // alt-screen. Read it back from the app: the welcome prompt may have
@@ -1446,7 +1445,7 @@ mod tests {
         let mut app = build_app_with_due();
         assert_eq!(app.tasks().len(), 1);
         assert_eq!(app.tasks()[0].due.as_deref(), Some("2026-06-30"));
-        assert_eq!(app.mode, tuxedo::app::Mode::Normal);
+        assert_eq!(app.mode, Mode::Normal);
 
         assert_eq!(resolve(&mut app, key('r')), Some(Action::Reschedule),);
         apply_action(&mut app, Action::Reschedule);
@@ -1471,7 +1470,7 @@ mod tests {
         let mut app = build_app();
         assert_eq!(app.tasks().len(), 3);
         assert_eq!(app.tasks()[0].due.as_deref(), None);
-        assert_eq!(app.mode, tuxedo::app::Mode::Normal);
+        assert_eq!(app.mode, Mode::Normal);
 
         assert_eq!(resolve(&mut app, key('r')), Some(Action::Reschedule),);
         apply_action(&mut app, Action::Reschedule);
