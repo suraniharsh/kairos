@@ -1,0 +1,31 @@
+[settings]
+lockfile = true
+
+[tools]
+rust = "latest"
+lefthook = "latest"
+
+[tasks.clippy]
+run = "cargo clippy --all-targets --locked -- -D warnings"
+
+[tasks.fmt]
+run = "cargo fmt --all"
+
+[tasks.fmt_check]
+run = "cargo fmt --all --check"
+
+[tasks.test]
+run = "cargo test --locked"
+
+[tasks.test_update_snapshots]
+run = "INSTA_UPDATE=always cargo test --test snapshots --locked"
+
+[tasks.screenshots]
+run = "cargo run --example screenshots"
+
+[tasks.demo]
+description = "Record the README hero GIF via vhs (requires vhs on PATH)."
+run = [
+    "cargo build --release",
+    "vhs docs/demo.tape",
+]

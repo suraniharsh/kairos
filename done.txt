@@ -1,0 +1,4 @@
+x 2026-06-24 2026-06-20 Set up Rust project structure with ratatui and crossterm +kairos @dev
+x 2026-06-25 2026-06-22 Update Cargo.toml with kairos metadata +kairos @dev
+x 2026-06-26 2026-06-23 Confirm kairos is free on crates.io and AUR +kairos @release
+x 2026-06-26 2026-06-26 Push initial commit to rust-rewrite branch +kairos @dev

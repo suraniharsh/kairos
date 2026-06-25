@@ -1,0 +1,27 @@
+[package]
+name = "kairos"
+version = "0.1.0"
+edition = "2024"
+authors = ["suraniharsh <harshsurani00@gmail.com>"]
+description = "A terminal-based task logger and time tracker"
+license = "MIT"
+repository = "https://github.com/suraniharsh/ritual-tui"
+
+[dependencies]
+anyhow = "1.0"
+chrono = "0.4.44"
+crossterm = "0.29.0"
+getrandom = "0.2"
+qrcode = { version = "0.14", default-features = false }
+ratatui = "0.30.0"
+tiny_http = "0.12"
+
+[dev-dependencies]
+insta = "1.47"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+panic = "abort"
+opt-level = "z"

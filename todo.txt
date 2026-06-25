@@ -1,0 +1,7 @@
+(A) 2026-06-26 Add nested subtask support +kairos @dev due:2026-07-10
+(B) 2026-06-26 Add time tracking and activity log +kairos @dev due:2026-07-20
+(B) 2026-06-26 Record demo gif and update screenshots +kairos @docs due:2026-07-05
+(C) 2026-06-26 Publish kairos to crates.io +kairos @release
+(C) 2026-06-26 Write contributing guide +kairos @docs
+(C) 2026-06-26 Implement hybrid search substring first then fuzzy +kairos @dev
+2026-06-26 Set up AUR package for kairos +kairos @release

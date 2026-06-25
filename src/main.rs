@@ -1,0 +1,1505 @@
+#![warn(clippy::unwrap_used)]
+
+use std::io;
+use std::time::{Duration, Instant};
+
+use anyhow::{Context, Result};
+use ratatui::DefaultTerminal;
+use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+
+use std::io::Write;
+
+use kairos::action::Action;
+use kairos::app::{AddOutcome, App, CalendarTarget, DialogInputMode, Mode, OverlayKind, View};
+use kairos::cli;
+use kairos::config::Config;
+use kairos::keybinds::{KeyBindings, ResolvedKey};
+use kairos::theme;
+use kairos::ui::hyperlinks;
+use kairos::{clipboard, todo, ui, update};
+
+const EVENT_POLL: Duration = Duration::from_millis(250);
+
+fn main() -> Result<()> {
+    let argv: Vec<String> = std::env::args().skip(1).collect();
+    // A recognized subcommand (possibly preceded by `-f`/`--json`) runs the
+    // one-shot CLI and exits; otherwise we fall through to the TUI.
+    if let Some(code) = kairos::cmd::run(&argv)? {
+        std::process::exit(code);
+    }
+    let arg = argv.first().cloned();
+    // `start_mode` is `Welcome` only on a true first run (no target and no
+    // ./todo.txt); every other entry opens straight into Normal.
+    let (path, start_mode) = match arg.as_deref() {
+        Some("--help") | Some("-h") => {
+            print_usage();
+            return Ok(());
+        }
+        Some("--version") | Some("-V") => {
+            println!("kairos {}", env!("CARGO_PKG_VERSION"));
+            return Ok(());
+        }
+        Some("update") => {
+            update::run()?;
+            return Ok(());
+        }
+        Some("--sample") => (cli::sample_path()?, Mode::Normal),
+        Some(s) if s.starts_with('-') => {
+            eprintln!("kairos: unknown option: {s}");
+            eprintln!("try `kairos --help`");
+            std::process::exit(2);
+        }
+        _ => match cli::resolve_target(arg)? {
+            cli::Target::File(p) => (p, Mode::Normal),
+            // Open into the welcome prompt backed by an as-yet-uncreated
+            // ./todo.txt; `handle_welcome` materializes the file the user picks.
+            cli::Target::FirstRun => (std::path::PathBuf::from("todo.txt"), Mode::Welcome),
+        },
+    };
+    // A freshly-created file is empty; otherwise read it. We accept NotFound
+    // (race with deletion between resolve_path and now) as "empty file" but
+    // refuse to silently swallow other IO errors — an unreadable or non-UTF-8
+    // file would otherwise present as an empty editor that, on first save,
+    // overwrites the user's data.
+    let body = match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => String::new(),
+        Err(e) => {
+            return Err(e).with_context(|| format!("reading {}", path.display()));
+        }
+    };
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let cfg = Config::load();
+    let keybinds = KeyBindings::load();
+    // Load user-supplied themes before constructing App, so the theme named
+    // in cfg can resolve to a custom theme on the first `Prefs::from_config`.
+    let theme_warnings = match theme::themes_dir() {
+        Some(dir) => {
+            let (user_themes, warnings) = theme::load_user_themes(&dir);
+            theme::init(user_themes);
+            warnings
+        }
+        None => {
+            theme::init(Vec::new());
+            Vec::new()
+        }
+    };
+    let done = cli::done_path(&path);
+    let mut app_state = App::new_with_done(path.clone(), done, body, today, cfg);
+    app_state.config_path = Config::path();
+    app_state.mode = start_mode;
+    // Surface theme-load problems on the first frame. Flash is single-line,
+    // so collapse multiple warnings to a count and let the user investigate
+    // their themes directory.
+    match theme_warnings.len() {
+        0 => {}
+        1 => app_state.flash(theme_warnings.into_iter().next().expect("len==1")),
+        n => app_state.flash(format!(
+            "{n} theme(s) skipped — check ~/.config/kairos/themes/"
+        )),
+    }
+    if std::env::var_os("KAIROS_NO_UPDATE_CHECK").is_none() {
+        app_state.set_update_check(update::spawn_check());
+    }
+
+    let terminal = ratatui::init();
+    // Give the window/tab a consistent `kairos <path>` title across terminals
+    // and operating systems, shortening long paths to fit a fixed budget.
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+    let title = ui::title::terminal_title(&path, home.as_deref(), ui::title::DEFAULT_BUDGET);
+    let _ = crossterm::execute!(io::stdout(), crossterm::terminal::SetTitle(title));
+    let result = run(terminal, &mut app_state, &keybinds);
+    ratatui::restore();
+    // Clear the title on exit so the shell retitles on its next prompt rather
+    // than leaving `kairos …` behind.
+    let _ = crossterm::execute!(io::stdout(), crossterm::terminal::SetTitle(""));
+    // Print the file path *after* restoring the terminal so the message
+    // survives in the user's scrollback rather than being eaten by the
+    // alt-screen. Read it back from the app: the welcome prompt may have
+    // rebound to the sample. Skip the line if the user quit the welcome
+    // prompt without choosing — no file was opened.
+    if app_state.mode != Mode::Welcome {
+        eprintln!("kairos: {}", app_state.file_path.display());
+    }
+    result
+}
+
+fn print_usage() {
+    println!("usage: kairos [FILE]                 launch the TUI");
+    println!("       kairos <command> [args]       run a one-shot command");
+    println!("       kairos update");
+    println!();
+    println!("Without FILE or a command, opens ./todo.txt if present; otherwise");
+    println!("prompts to create ./todo.txt here or open a sample todo.txt, in");
+    println!("the interactive TUI.");
+    println!();
+    println!("Inside the TUI, press `s` to expose a phone-friendly capture");
+    println!("endpoint on your LAN and show a QR code for it. Captures land");
+    println!("in a sibling inbox.txt that the TUI merges on the next poll.");
+    println!();
+    println!("Commands (task numbers are 1-based file lines, as shown by `list`):");
+    println!("  add, a TEXT...            add a task (natural-language dates supported)");
+    println!("  append, app N TEXT...     append text to task N");
+    println!("  prepend, prep N TEXT...   prepend text to task N");
+    println!("  replace N TEXT...         replace task N");
+    println!("  pri, p N PRIORITY         set priority A-Z on task N");
+    println!("  depri, dp N...            remove priority from task N");
+    println!("  done, do N...             mark task N complete");
+    println!("  del, rm N [TERM]          delete task N (prompts; -f to force), or remove TERM");
+    println!("  archive                   move completed tasks to done.txt");
+    println!("  list, ls [TERM...]        list tasks (TERM: +project @context or text)");
+    println!("  listall, lsa [TERM...]    list todo.txt and done.txt");
+    println!("  listpri, lsp [PRIORITY]   list prioritized tasks");
+    println!("  listproj, lsprj           list +projects");
+    println!("  listcon, lsc              list @contexts");
+    println!("  update                    print instructions for upgrading kairos");
+    println!();
+    println!("Options:");
+    println!("  -f, --force      skip confirmation prompts (e.g. for del)");
+    println!("      --json       machine-readable output for the commands above");
+    println!("  -h, --help       show this message and exit");
+    println!("  -V, --version    print version and exit");
+    println!("      --sample     open the sample todo.txt in the TUI");
+    println!();
+    println!("Environment:");
+    println!("  TODO_DIR     directory holding todo.txt / done.txt");
+    println!("  TODO_FILE    path to the todo file (default $TODO_DIR/todo.txt)");
+    println!("  DONE_FILE    path to the archive file (default sibling done.txt)");
+}
+
+fn run(mut terminal: DefaultTerminal, app: &mut App, keybinds: &KeyBindings) -> Result<()> {
+    let mut dirty = true;
+    while !app.should_quit {
+        // Pick up midnight rollover so threshold-hidden tasks reveal
+        // themselves without requiring an app restart.
+        if app.refresh_today(chrono::Local::now().format("%Y-%m-%d").to_string()) {
+            dirty = true;
+        }
+        // Drain the startup archive loader (and pick up external edits to
+        // done.txt). Non-blocking: the first frame can render todo.txt
+        // before the archive read completes.
+        if app.poll_archive() {
+            dirty = true;
+        }
+        // Pick up the update-check result so the status-bar indicator can
+        // appear without waiting for a keystroke.
+        if app.poll_update_check() {
+            dirty = true;
+        }
+        if dirty {
+            // Extract URL runs from the completed frame before the borrow on
+            // terminal ends, then write the OSC 8 overlay directly to the
+            // backend writer. Doing this here (rather than inside `ui::draw`)
+            // keeps cell symbols byte-identical to a plain render, so
+            // ratatui's diff width calculation doesn't skip cells past the
+            // URL — see `ui::hyperlinks` for the full explanation.
+            let runs = {
+                let frame = terminal.draw(|f| ui::draw(f, app))?;
+                hyperlinks::collect(frame.buffer)
+            };
+            if !runs.is_empty() {
+                let backend = terminal.backend_mut();
+                hyperlinks::emit_overlay(backend, &runs)?;
+                backend.flush()?;
+            }
+            dirty = false;
+        }
+        let timeout = next_timeout(app);
+        if event::poll(timeout)? {
+            match event::read()? {
+                Event::Key(key) if key.kind == KeyEventKind::Press => {
+                    handle_key(app, key, keybinds);
+                    dirty = true;
+                }
+                // A terminal resize must trigger an immediate redraw;
+                // otherwise the screen stays stale until the next keystroke.
+                Event::Resize(_, _) => {
+                    dirty = true;
+                }
+                _ => {}
+            }
+        } else if !app.check_external_changes() {
+            // Idle tick — file changed under us; reload was performed.
+            dirty = true;
+        }
+        if app.flash_should_clear() {
+            app.clear_flash();
+            dirty = true;
+        }
+        if app.chord.should_clear() {
+            app.chord.clear();
+            dirty = true;
+        }
+    }
+    Ok(())
+}
+
+fn next_timeout(app: &App) -> Duration {
+    let earliest = match (app.flash_deadline(), app.chord.deadline()) {
+        (Some(f), Some(c)) => Some(f.min(c)),
+        (a, b) => a.or(b),
+    };
+    match earliest {
+        Some(deadline) => deadline
+            .saturating_duration_since(Instant::now())
+            .min(EVENT_POLL),
+        None => EVENT_POLL,
+    }
+}
+
+fn handle_key(app: &mut App, key: KeyEvent, keybinds: &KeyBindings) {
+    // Detect external edits before processing the key. On detection the
+    // file is reloaded, the keystroke is consumed (re-press to act on the
+    // new state), and the per-mutator checks become no-ops downstream.
+    if !app.check_external_changes() {
+        return;
+    }
+    match app.mode {
+        Mode::Insert => handle_insert(app, key),
+        Mode::Search => handle_search(app, key),
+        Mode::Help => handle_help(app, key),
+        Mode::Settings => handle_settings(app, key),
+        Mode::PromptProject | Mode::PromptContext | Mode::PromptSaveFilter => {
+            handle_prompt(app, key)
+        }
+        Mode::PickProject | Mode::PickContext | Mode::PickSavedFilter => handle_pick(app, key),
+        Mode::PickTheme => handle_pick_theme(app, key),
+        Mode::CommandPalette => handle_command_palette(app, key),
+        Mode::Share => handle_share(app, key),
+        Mode::Welcome => handle_welcome(app, key),
+        Mode::Normal | Mode::Visual => handle_normal(app, key, keybinds),
+    }
+}
+
+/// First-run welcome prompt. `c` creates `./todo.txt` (the App's current
+/// `file_path`) and edits it; `s` opens the bundled sample; `q`/`Esc` quits
+/// without creating anything. Any other key is ignored so a stray press
+/// doesn't silently pick an option.
+fn handle_welcome(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Char('c') => match cli::ensure_file(app.file_path.clone()) {
+            Ok(_) => app.mode = Mode::Normal,
+            Err(e) => app.flash(format!("could not create {}: {e}", app.file_path.display())),
+        },
+        KeyCode::Char('s') => match cli::sample_path() {
+            Ok(sample) => {
+                let done = cli::done_path(&sample);
+                let body = std::fs::read_to_string(&sample).unwrap_or_default();
+                app.open_file(sample, done, body);
+                app.mode = Mode::Normal;
+            }
+            Err(e) => app.flash(format!("could not open sample: {e}")),
+        },
+        KeyCode::Char('q') | KeyCode::Esc => app.should_quit = true,
+        _ => {}
+    }
+}
+
+/// Share overlay: any key dismisses, returning to Normal. The server
+/// keeps running in the background; pressing `s` again re-shows the
+/// same QR without rebinding.
+fn handle_share(app: &mut App, _key: KeyEvent) {
+    app.mode = Mode::Normal;
+}
+
+/// What the draft buffer changed (or didn't) in response to a key. Lets
+/// callers like search distinguish a text edit (which must re-run the filter)
+/// from a cursor move (which must not, otherwise navigating within the search
+/// box would reset the visible-list cursor on every arrow press).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DraftEffect {
+    Unhandled,
+    CursorMoved,
+    TextChanged,
+}
+
+/// Apply a standard text-editing key (Backspace/Delete/arrows/Home/End/Char)
+/// to the draft. Centralizes the canonical key list so insert/search/prompt
+/// modes stay in sync as bindings evolve.
+fn apply_to_draft(app: &mut App, key: KeyEvent) -> DraftEffect {
+    match key.code {
+        KeyCode::Backspace => {
+            app.draft_backspace();
+            DraftEffect::TextChanged
+        }
+        KeyCode::Delete => {
+            app.draft_delete_forward();
+            DraftEffect::TextChanged
+        }
+        KeyCode::Char(c) => {
+            app.draft_insert_char(c);
+            DraftEffect::TextChanged
+        }
+        KeyCode::Left => {
+            app.draft_left();
+            DraftEffect::CursorMoved
+        }
+        KeyCode::Right => {
+            app.draft_right();
+            DraftEffect::CursorMoved
+        }
+        KeyCode::Home => {
+            app.draft_home();
+            DraftEffect::CursorMoved
+        }
+        KeyCode::End => {
+            app.draft_end();
+            DraftEffect::CursorMoved
+        }
+        _ => DraftEffect::Unhandled,
+    }
+}
+
+fn handle_insert_normal(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Enter => {
+            let outcome = if app.selection.editing().is_some() {
+                app.save_edit();
+                AddOutcome::Saved
+            } else {
+                app.add_from_draft()
+            };
+            if !matches!(outcome, AddOutcome::Parsed) {
+                app.mode = Mode::Normal;
+                app.draft_clear();
+                app.selection.exit_edit();
+            }
+        }
+        KeyCode::Esc => {
+            app.mode = Mode::Normal;
+            app.draft_clear();
+            app.selection.exit_edit();
+        }
+        KeyCode::Char('h') | KeyCode::Left => app.draft_left(),
+        KeyCode::Char('l') | KeyCode::Right => app.draft_right(),
+        KeyCode::Char('w') if app.chord.consume('d') => app.draft_delete_word_forward(),
+        KeyCode::Char('w') if app.chord.consume('c') => {
+            app.draft_delete_word_forward();
+            app.draft.set_input_mode(DialogInputMode::Insert);
+        }
+        KeyCode::Char('w') => app.draft_word_forward(),
+        KeyCode::Char('b') => app.draft_word_backward(),
+        KeyCode::Char('e') => app.draft_word_end(),
+        KeyCode::Char('d') => app.chord.arm('d'),
+        KeyCode::Char('c') => app.chord.arm('c'),
+        KeyCode::Char('x') => app.draft_delete_forward(),
+        KeyCode::Char('i') => app.draft.set_input_mode(DialogInputMode::Insert),
+        KeyCode::Char('a') => {
+            app.draft_right();
+            app.draft.set_input_mode(DialogInputMode::Insert);
+        }
+        KeyCode::Char('A') => {
+            app.draft_end();
+            app.draft.set_input_mode(DialogInputMode::Insert);
+        }
+        _ => {}
+    }
+}
+
+fn handle_insert(app: &mut App, key: KeyEvent) {
+    if app.draft.input_mode() == DialogInputMode::Normal {
+        handle_insert_normal(app, key);
+        return;
+    }
+
+    // Metadata-picker overlays take precedence. Non-slash overlays fully
+    // consume keys until accepted or cancelled; the slash menu intercepts
+    // only its navigation keys and lets text editing flow through so the
+    // filter text in the buffer keeps growing as the user types.
+    let overlay = app.draft.overlay().map(|o| o.kind());
+    match overlay {
+        Some(OverlayKind::Calendar) => {
+            handle_insert_calendar(app, key);
+            return;
+        }
+        Some(OverlayKind::RecurrenceBuilder) => {
+            handle_insert_rec_builder(app, key);
+            return;
+        }
+        Some(OverlayKind::PriorityChooser) => {
+            handle_insert_priority(app, key);
+            return;
+        }
+        Some(OverlayKind::SlashMenu) => {
+            if handle_insert_slash_menu(app, key) {
+                return;
+            }
+            // Fall through — let the key flow into the editor so filter chars
+            // can be typed/erased. We re-check the overlay invariants after.
+            apply_to_draft(app, key);
+            // Backspacing past the `/` closes the menu; typing more chars
+            // just narrows the filter.
+            app.slash_menu_revalidate();
+            return;
+        }
+        None => {}
+    }
+
+    // Autocomplete bindings take precedence — only when the popup is visible.
+    // Tab accepts; Enter falls through to save so the popup never swallows the
+    // submit keystroke (e.g. when the typed token already matches an existing
+    // project/context). Esc with the popup open dismisses the popup but leaves
+    // Insert mode intact; a second Esc enters Normal mode (handled below).
+    if app.autocomplete_visible() {
+        match key.code {
+            KeyCode::Tab | KeyCode::Enter => {
+                app.autocomplete_accept();
+                return;
+            }
+            _ => {
+                if handle_autocomplete_keys(app, key) {
+                    return;
+                }
+            }
+        }
+    }
+
+    match key.code {
+        KeyCode::Esc => {
+            app.draft.set_input_mode(DialogInputMode::Normal);
+        }
+        KeyCode::Enter => {
+            let outcome = if app.selection.editing().is_some() {
+                app.save_edit();
+                AddOutcome::Saved
+            } else {
+                app.add_from_draft()
+            };
+            // `Parsed` means the NL parser rewrote the draft into canonical
+            // todo.txt and is asking the user to confirm — stay in Insert so
+            // they can review/edit before a second Enter saves.
+            if !matches!(outcome, AddOutcome::Parsed) {
+                app.mode = Mode::Normal;
+                app.draft_clear();
+                app.selection.exit_edit();
+            }
+        }
+        _ => {
+            let before = app.draft.text().len();
+            let effect = apply_to_draft(app, key);
+            // `/` opens the slash menu; `:` after a recognised key
+            // (`due` / `t` / `rec`) opens the matching picker directly. Both
+            // detections run post-insert so they inspect what actually
+            // landed in the buffer.
+            if effect == DraftEffect::TextChanged && app.draft.text().len() > before {
+                match key.code {
+                    KeyCode::Char('/') => app.maybe_open_slash_menu(),
+                    KeyCode::Char(':') => app.maybe_open_kv_overlay(),
+                    _ => {}
+                }
+            }
+        }
+    }
+}
+
+/// Slash-menu key handler. Returns `true` when the key was consumed by the
+/// menu (navigation, accept, dismiss); `false` when the key should fall
+/// through to text editing so filter chars are typed into the buffer.
+fn handle_insert_slash_menu(app: &mut App, key: KeyEvent) -> bool {
+    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+    match key.code {
+        KeyCode::Up => {
+            app.slash_step(false);
+            true
+        }
+        KeyCode::Down => {
+            app.slash_step(true);
+            true
+        }
+        KeyCode::Char('n') if ctrl => {
+            app.slash_step(true);
+            true
+        }
+        KeyCode::Char('p') if ctrl => {
+            app.slash_step(false);
+            true
+        }
+        KeyCode::Tab | KeyCode::Enter => {
+            app.slash_accept();
+            true
+        }
+        KeyCode::Esc => {
+            app.slash_cancel();
+            true
+        }
+        _ => false,
+    }
+}
+
+fn handle_insert_calendar(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Char('h') | KeyCode::Left => app.calendar_move(-1, 0),
+        KeyCode::Char('l') | KeyCode::Right => app.calendar_move(1, 0),
+        KeyCode::Char('k') | KeyCode::Up => app.calendar_move(0, -1),
+        KeyCode::Char('j') | KeyCode::Down => app.calendar_move(0, 1),
+        KeyCode::Char('t') => app.calendar_set_relative(0),
+        KeyCode::Char('T') => app.calendar_set_relative(1),
+        KeyCode::Char('w') => app.calendar_set_relative(7),
+        KeyCode::Char('m') => app.calendar_add_months(1),
+        KeyCode::Char('M') => app.calendar_add_months(-1),
+        KeyCode::Char('x') => app.calendar_clear(),
+        KeyCode::Enter => app.calendar_accept(),
+        KeyCode::Esc => app.calendar_cancel(),
+        _ => {}
+    }
+}
+
+fn handle_insert_rec_builder(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Char('h') | KeyCode::Left => app.recurrence_focus(-1),
+        KeyCode::Char('l') | KeyCode::Right => app.recurrence_focus(1),
+        KeyCode::Char('j') | KeyCode::Down => app.recurrence_focus(1),
+        KeyCode::Char('k') | KeyCode::Up => app.recurrence_focus(-1),
+        // `=` is the unshifted `+` on US keyboards — accept both so users
+        // don't have to chord Shift to bump the interval.
+        KeyCode::Char('+') | KeyCode::Char('=') => app.recurrence_adjust(1),
+        KeyCode::Char('-') | KeyCode::Char('_') => app.recurrence_adjust(-1),
+        KeyCode::Enter => app.recurrence_accept(),
+        KeyCode::Esc => app.recurrence_cancel(),
+        _ => {}
+    }
+}
+
+fn handle_insert_priority(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Char('j') | KeyCode::Down => app.priority_step(true),
+        KeyCode::Char('k') | KeyCode::Up => app.priority_step(false),
+        KeyCode::Enter => app.priority_accept(),
+        KeyCode::Esc => app.priority_cancel(),
+        _ => {}
+    }
+}
+
+fn handle_search(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Esc => {
+            app.mode = Mode::Normal;
+            app.draft_clear();
+            app.clear_search();
+        }
+        KeyCode::Enter => {
+            app.mode = Mode::Normal;
+            app.cursor = 0;
+        }
+        _ => {
+            if apply_to_draft(app, key) == DraftEffect::TextChanged {
+                app.set_search(app.draft.text().to_string());
+            }
+        }
+    }
+}
+
+fn handle_help(app: &mut App, key: KeyEvent) {
+    if matches!(
+        key.code,
+        KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q')
+    ) {
+        app.mode = Mode::Normal;
+    }
+}
+
+fn handle_settings(app: &mut App, key: KeyEvent) {
+    if matches!(
+        key.code,
+        KeyCode::Esc | KeyCode::Char(',') | KeyCode::Char('q')
+    ) {
+        app.mode = Mode::Normal;
+    }
+}
+
+fn handle_pick(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Char('j') | KeyCode::Down => app.pick_step(true),
+        KeyCode::Char('k') | KeyCode::Up => app.pick_step(false),
+        KeyCode::Enter => app.pick_accept(),
+        KeyCode::Esc => app.pick_cancel(),
+        _ => {}
+    }
+}
+
+fn handle_pick_theme(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Char('j') | KeyCode::Down => app.pick_theme_step(true),
+        KeyCode::Char('k') | KeyCode::Up => app.pick_theme_step(false),
+        KeyCode::Enter => app.pick_theme_accept(),
+        KeyCode::Esc => app.pick_theme_cancel(),
+        _ => {}
+    }
+}
+
+fn handle_command_palette(app: &mut App, key: KeyEvent) {
+    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+    // List navigation. Plain j/k must type into the search box — the user
+    // might be searching for "jump" — so navigation goes via arrows or
+    // Ctrl-N/Ctrl-P (matches the autocomplete popup in handle_insert).
+    match key.code {
+        KeyCode::Esc => {
+            app.mode = app.command_palette.take_prior();
+            app.draft_clear();
+            return;
+        }
+        KeyCode::Enter => {
+            let chosen = app.command_palette.current_action();
+            // Restore the prior mode (Normal or Visual) *before* dispatching
+            // so visual-aware actions (ToggleComplete, Delete, ToggleSelected)
+            // see the selection. The dispatched action may then set its own
+            // mode (BeginAdd → Insert, etc.); we don't stomp it after.
+            app.mode = app.command_palette.take_prior();
+            app.draft_clear();
+            if let Some(action) = chosen {
+                apply_action(app, action);
+            }
+            return;
+        }
+        KeyCode::Down => {
+            app.command_palette.step(1);
+            return;
+        }
+        KeyCode::Up => {
+            app.command_palette.step(-1);
+            return;
+        }
+        KeyCode::Char('n') if ctrl => {
+            app.command_palette.step(1);
+            return;
+        }
+        KeyCode::Char('p') if ctrl => {
+            app.command_palette.step(-1);
+            return;
+        }
+        _ => {}
+    }
+    if apply_to_draft(app, key) == DraftEffect::TextChanged {
+        // `refresh` resets the cursor when the needle actually changes; a
+        // same-needle call (e.g. typed-and-deleted character) is a no-op.
+        app.command_palette.refresh(app.draft.text());
+    }
+}
+
+fn handle_autocomplete_keys(app: &mut App, key: KeyEvent) -> bool {
+    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+    match key.code {
+        KeyCode::Up => {
+            app.autocomplete_step(false);
+            true
+        }
+        KeyCode::Down => {
+            app.autocomplete_step(true);
+            true
+        }
+        KeyCode::Char('n') if ctrl => {
+            app.autocomplete_step(true);
+            true
+        }
+        KeyCode::Char('p') if ctrl => {
+            app.autocomplete_step(false);
+            true
+        }
+        KeyCode::Esc => {
+            app.draft.suppress_autocomplete();
+            true
+        }
+        _ => false,
+    }
+}
+
+fn handle_prompt(app: &mut App, key: KeyEvent) {
+    if app.autocomplete_visible() {
+        match key.code {
+            KeyCode::Tab => {
+                app.autocomplete_accept();
+                return;
+            }
+            _ => {
+                if handle_autocomplete_keys(app, key) {
+                    return;
+                }
+            }
+        }
+    }
+
+    match key.code {
+        KeyCode::Esc => {
+            app.mode = Mode::Normal;
+            app.draft_clear();
+        }
+        KeyCode::Enter => {
+            let prev_mode = app.mode;
+            let value = app.draft.text().to_string();
+            app.draft_clear();
+            app.mode = Mode::Normal;
+            match prev_mode {
+                Mode::PromptProject => app.add_project_to_current(&value),
+                Mode::PromptContext => app.toggle_context_on_current(&value),
+                Mode::PromptSaveFilter => app.save_current_filter_as(&value),
+                _ => {}
+            }
+        }
+        _ => {
+            apply_to_draft(app, key);
+        }
+    }
+}
+
+// `Action` lives in `kairos::action` (see `src/action.rs`). Keeping it in the
+// library lets the command palette enumerate every variant without pulling
+// main.rs into the dependency graph.
+
+/// Map a single keystroke to an `Action`. Returns `None` when the keystroke
+/// is the *first* press of a chord (e.g. `g` of `gg`) or unknown — in both
+/// cases there is no immediate behavior to apply.
+///
+/// Mutates the chord state because chord progress is part of interpreting
+/// the key, not a separate concern.
+fn resolve_normal_key(app: &mut App, key: KeyEvent, keybinds: &KeyBindings) -> Option<Action> {
+    match keybinds.resolve_normal(key, &mut app.chord) {
+        Some(ResolvedKey::Action(action)) => return Some(action),
+        Some(ResolvedKey::Pending) => return None,
+        None => {}
+    }
+
+    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+    if ctrl {
+        return match key.code {
+            KeyCode::Char('d') => Some(Action::HalfPageDown),
+            KeyCode::Char('u') => Some(Action::HalfPageUp),
+            KeyCode::Char('p') => Some(Action::OpenCommandPalette),
+            _ => None,
+        };
+    }
+    Some(match key.code {
+        KeyCode::Char('q') => Action::Quit,
+        KeyCode::Char('j') | KeyCode::Down => Action::CursorDown,
+        KeyCode::Char('k') | KeyCode::Up => Action::CursorUp,
+        KeyCode::Char('G') => Action::CursorBottom,
+        // First 'g' arms the chord; second 'g' fires CursorTop.
+        KeyCode::Char('g') if app.chord.toggle('g') => Action::CursorTop,
+        KeyCode::Char('n') => Action::BeginAdd,
+        KeyCode::Char('r') => Action::Reschedule,
+        KeyCode::Char('a') => Action::ToggleArchiveView,
+        KeyCode::Char('l') => Action::GoList,
+        KeyCode::Char('e') => Action::BeginEdit,
+        KeyCode::Char('i') => Action::BeginEditInsert,
+        KeyCode::Char('x') => Action::ToggleComplete,
+        // 'dd' chord. First press arms; second fires.
+        KeyCode::Char('d') if app.chord.toggle('d') => Action::Delete,
+        // 'yy' chord copies the whole line; 'yb' (after 'y' is armed) copies
+        // the body only. Plain 'y' just arms the leader.
+        KeyCode::Char('y') if app.chord.toggle('y') => Action::CopyLine,
+        KeyCode::Char('b') if app.chord.consume('y') => Action::CopyBody,
+        KeyCode::Char('p') => {
+            // After 'f' arms, 'fp' opens the project picker. Otherwise plain
+            // 'p' cycles priority.
+            if app.chord.consume('f') {
+                Action::PickProject
+            } else {
+                Action::CyclePriority
+            }
+        }
+        KeyCode::Char('c') => {
+            if app.chord.consume('f') {
+                Action::PickContext
+            } else {
+                Action::BeginPromptContext
+            }
+        }
+        KeyCode::Char('/') => Action::BeginSearch,
+        KeyCode::Char('?') => Action::OpenHelp,
+        KeyCode::Char(',') => Action::OpenSettings,
+        KeyCode::Char(':') => Action::OpenCommandPalette,
+        KeyCode::Char('u') => Action::Undo,
+        KeyCode::Char('v') => Action::ToggleVisual,
+        KeyCode::Char(' ') => Action::ToggleSelected,
+        KeyCode::Char('A') => Action::ArchiveCompleted,
+        // First 'f' arms the leader; a second 'f' (`ff`) opens the saved-
+        // search picker. Mirrors the `fp`/`fc` pattern below.
+        KeyCode::Char('f') => {
+            if app.chord.consume('f') {
+                Action::PickSavedFilter
+            } else {
+                Action::ArmF
+            }
+        }
+        KeyCode::Char('s') => {
+            // `fs` saves the active search; plain 's' opens the share QR.
+            if app.chord.consume('f') {
+                Action::SaveCurrentFilter
+            } else {
+                Action::OpenShare
+            }
+        }
+        KeyCode::Char('S') => Action::CycleSort,
+        KeyCode::Char('+') => Action::BeginPromptProject,
+        KeyCode::Char('[') => Action::ToggleLeftPane,
+        KeyCode::Char(']') => Action::ToggleRightPane,
+        KeyCode::Char('T') => Action::OpenThemePicker,
+        KeyCode::Char('D') => Action::CycleDensity,
+        KeyCode::Char('L') => Action::ToggleLineNum,
+        KeyCode::Char('H') => Action::ToggleShowDone,
+        KeyCode::Char('F') => Action::ToggleShowFuture,
+        KeyCode::Esc => Action::EscapeStack,
+        _ => return None,
+    })
+}
+
+fn apply_action(app: &mut App, action: Action) {
+    // Archive view is read-only with two exceptions: `x` un-archives the
+    // row at the cursor, `dd` permanently removes it from done.txt. Other
+    // mutating actions flash a hint and abort. Navigation, view-switch,
+    // theme/density/layout toggles, and overlays (help/settings) fall
+    // through to the normal handler below.
+    if app.view() == View::Archive {
+        match action {
+            Action::ToggleComplete => {
+                if let Some(idx) = app.cur_abs() {
+                    app.unarchive(idx);
+                }
+                return;
+            }
+            Action::Delete => {
+                if let Some(idx) = app.cur_abs() {
+                    app.archive_delete(idx);
+                }
+                return;
+            }
+            Action::BeginAdd
+            | Action::BeginEdit
+            | Action::BeginEditInsert
+            | Action::CyclePriority
+            | Action::ToggleVisual
+            | Action::ToggleSelected
+            | Action::BeginSearch
+            | Action::BeginPromptProject
+            | Action::BeginPromptContext
+            | Action::PickProject
+            | Action::PickContext
+            | Action::PickSavedFilter
+            | Action::SaveCurrentFilter
+            | Action::CycleSort
+            | Action::ToggleShowDone
+            | Action::ToggleShowFuture
+            | Action::Undo => {
+                app.flash("read-only in archive");
+                return;
+            }
+            _ => {}
+        }
+    }
+    let len = app.visible_indices().len();
+    match action {
+        Action::Quit => app.should_quit = true,
+        Action::CursorDown => {
+            if len > 0 {
+                app.cursor = (app.cursor + 1).min(len - 1);
+            }
+        }
+        Action::CursorUp => app.cursor = app.cursor.saturating_sub(1),
+        Action::CursorTop => app.cursor = 0,
+        Action::CursorBottom => {
+            if len > 0 {
+                app.cursor = len - 1;
+            }
+        }
+        Action::HalfPageDown => {
+            app.cursor = (app.cursor + 10).min(len.saturating_sub(1));
+        }
+        Action::HalfPageUp => app.cursor = app.cursor.saturating_sub(10),
+        Action::BeginAdd => {
+            app.mode = Mode::Insert;
+            app.draft_clear();
+            app.selection.exit_edit();
+        }
+        Action::BeginEdit => {
+            if let Some(abs) = app.cur_abs()
+                && let Some(raw) = app.task_raw(abs)
+            {
+                app.selection.enter_edit(abs);
+                app.draft_set(raw);
+                app.mode = Mode::Insert;
+            }
+        }
+        Action::BeginEditInsert => {
+            if let Some(abs) = app.cur_abs()
+                && let Some(raw) = app.task_raw(abs)
+            {
+                app.selection.enter_edit(abs);
+                app.draft_set_insert(raw);
+                app.mode = Mode::Insert;
+            }
+        }
+        Action::ToggleComplete => {
+            if app.mode == Mode::Visual && !app.selection.is_empty() {
+                app.complete_selected();
+            } else if let Some(abs) = app.cur_abs() {
+                app.toggle_complete(abs);
+            }
+        }
+        Action::Delete => {
+            if app.mode == Mode::Visual && !app.selection.is_empty() {
+                app.delete_selected();
+            } else if let Some(abs) = app.cur_abs() {
+                app.delete(abs);
+            }
+        }
+        Action::CyclePriority => {
+            if let Some(abs) = app.cur_abs() {
+                app.cycle_priority(abs);
+            }
+        }
+        Action::BeginSearch => {
+            app.mode = Mode::Search;
+            app.draft_clear();
+            app.clear_search();
+        }
+        Action::OpenHelp => app.mode = Mode::Help,
+        Action::OpenSettings => app.mode = Mode::Settings,
+        Action::OpenCommandPalette => {
+            // Snapshot the current mode (Normal or Visual) so cancel/run
+            // can restore it — otherwise opening the palette from Visual
+            // and cancelling silently exits Visual.
+            let prior = app.mode;
+            app.command_palette.open(prior);
+            app.mode = Mode::CommandPalette;
+            app.draft_clear();
+        }
+        Action::Undo => app.undo(),
+        Action::ToggleVisual => {
+            app.mode = if app.mode == Mode::Visual {
+                Mode::Normal
+            } else {
+                Mode::Visual
+            };
+        }
+        Action::ToggleSelected => {
+            if app.mode == Mode::Visual
+                && let Some(abs) = app.cur_abs()
+            {
+                app.selection.toggle(abs);
+            }
+        }
+        Action::GoList => app.set_view(View::List),
+        Action::ToggleArchiveView => {
+            let next = if app.view() == View::Archive {
+                View::List
+            } else {
+                View::Archive
+            };
+            app.set_view(next);
+        }
+        Action::ArchiveCompleted => {
+            if app.view() == View::Archive {
+                app.flash("already in archive");
+            } else if app.has_completed_tasks() {
+                app.archive_completed();
+            } else {
+                app.flash("no completed tasks to archive");
+            }
+        }
+        Action::ArmF => app.chord.arm('f'),
+        Action::PickProject => app.enter_pick_project(),
+        Action::PickContext => app.enter_pick_context(),
+        Action::PickSavedFilter => app.enter_pick_saved(),
+        Action::SaveCurrentFilter => {
+            if app.filter().search.is_empty() {
+                app.flash("no active search to save");
+            } else {
+                app.mode = Mode::PromptSaveFilter;
+                app.draft_clear();
+            }
+        }
+        Action::CycleSort => app.cycle_sort(),
+        Action::BeginPromptProject => {
+            app.mode = Mode::PromptProject;
+            app.draft_clear();
+        }
+        Action::BeginPromptContext => {
+            app.mode = Mode::PromptContext;
+            app.draft_clear();
+        }
+        Action::ToggleLeftPane => {
+            app.prefs.toggle_left();
+            app.save_prefs();
+        }
+        Action::ToggleRightPane => {
+            app.prefs.toggle_right();
+            app.save_prefs();
+        }
+        Action::CycleTheme => app.cycle_theme(),
+        Action::CycleDensity => app.cycle_density(),
+        Action::ToggleLineNum => {
+            app.prefs.toggle_line_num();
+            app.save_prefs();
+        }
+        Action::ToggleShowDone => {
+            app.prefs.toggle_show_done();
+            app.cursor = 0;
+            app.recompute_visible();
+            app.save_prefs();
+        }
+        Action::ToggleShowFuture => {
+            app.prefs.toggle_show_future();
+            app.cursor = 0;
+            app.recompute_visible();
+            app.save_prefs();
+        }
+        Action::CopyLine => copy_current_task(app, false),
+        Action::CopyBody => copy_current_task(app, true),
+        Action::OpenShare => match app.ensure_share_started() {
+            Ok(_) => {
+                app.mode = Mode::Share;
+            }
+            Err(e) => app.flash(format!("share unavailable: {e}")),
+        },
+        Action::OpenThemePicker => {
+            if theme::all().len() <= 1 {
+                app.flash("only one theme");
+            } else {
+                app.enter_pick_theme();
+            }
+        }
+        Action::EscapeStack => {
+            let has_pc = app.filter().project.is_some() || app.filter().context.is_some();
+            let has_search = !app.filter().search.is_empty();
+            if has_pc {
+                app.set_project_filter(None);
+                app.set_context_filter(None);
+            } else if has_search {
+                app.draft_clear();
+                app.clear_search();
+            } else if !app.selection.is_empty() {
+                app.selection.clear();
+            } else if app.mode == Mode::Visual {
+                app.mode = Mode::Normal;
+            } else if app.view() != View::List {
+                app.set_view(View::List);
+            }
+        }
+        // Opens to insert mode just like i/e but with the calendar open and the cursor on the calendar
+        // If there is a due date, the cursor begins on the current due date
+        // If there is no due date, the cursor begins on today
+        // Enter/escape takes the user back to insert mode on the task
+        Action::Reschedule => {
+            if let Some(abs) = app.cur_abs()
+                && let Some(raw) = app.task_raw(abs)
+            {
+                app.selection.enter_edit(abs);
+                app.draft_set_insert(raw);
+                app.mode = Mode::Insert;
+                app.open_calendar(CalendarTarget::Due);
+            }
+        }
+    }
+}
+
+fn handle_normal(app: &mut App, key: KeyEvent, keybinds: &KeyBindings) {
+    if let Some(action) = resolve_normal_key(app, key, keybinds) {
+        apply_action(app, action);
+    }
+    app.clamp_cursor();
+}
+
+fn copy_current_task(app: &mut App, body_only: bool) {
+    let Some(raw) = app.cur_task().map(|t| t.raw.clone()) else {
+        return;
+    };
+    let payload = if body_only {
+        todo::body_only(&raw)
+    } else {
+        raw
+    };
+    match clipboard::copy(&payload) {
+        Ok(()) => app.flash(if body_only { "copied (body)" } else { "copied" }),
+        Err(e) => app.flash(format!("copy failed: {e}")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::NaiveDate;
+    use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use kairos::config::Config;
+
+    fn key(c: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
+    }
+
+    fn ctrl(c: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)
+    }
+
+    fn resolve(app: &mut App, key: KeyEvent) -> Option<Action> {
+        resolve_normal_key(app, key, &KeyBindings::default())
+    }
+
+    fn welcome_app(name: &str) -> (App, std::path::PathBuf) {
+        let path = std::env::temp_dir().join(format!(
+            "kairos-welcome-{name}-{}-{:?}.txt",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let mut app = App::new(
+            path.clone(),
+            String::new(),
+            "2026-05-07".into(),
+            Config::default(),
+        );
+        app.mode = Mode::Welcome;
+        (app, path)
+    }
+
+    #[test]
+    fn welcome_c_creates_cwd_file_and_enters_normal() {
+        let (mut app, path) = welcome_app("c");
+        assert!(!path.exists(), "precondition: file must not exist yet");
+        handle_welcome(&mut app, key('c'));
+        assert!(path.exists(), "`c` must create the target file");
+        assert_eq!(app.mode, Mode::Normal);
+        assert_eq!(app.file_path, path, "`c` keeps the cwd target path");
+        assert!(!app.should_quit);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn welcome_s_opens_sample_and_enters_normal() {
+        let (mut app, path) = welcome_app("s");
+        handle_welcome(&mut app, key('s'));
+        assert_eq!(app.mode, Mode::Normal);
+        assert_ne!(app.file_path, path, "`s` rebinds away from the cwd target");
+        assert!(
+            app.file_path.ends_with("kairos-sample.txt"),
+            "`s` opens the bundled sample, got {:?}",
+            app.file_path
+        );
+        assert!(!app.tasks().is_empty(), "sample must load tasks");
+        assert!(!path.exists(), "`s` must not create the cwd file");
+    }
+
+    #[test]
+    fn welcome_q_and_esc_quit_without_creating_anything() {
+        let (mut app, path) = welcome_app("q");
+        handle_welcome(&mut app, key('q'));
+        assert!(app.should_quit, "`q` must quit");
+        assert!(!path.exists(), "`q` must not create a file");
+
+        let (mut app, path) = welcome_app("esc");
+        handle_welcome(&mut app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(app.should_quit, "Esc must quit");
+        assert!(!path.exists(), "Esc must not create a file");
+    }
+
+    fn build_app() -> App {
+        let path = std::env::temp_dir().join(format!(
+            "kairos-bindings-{}-{:?}.txt",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::write(&path, "a\nb\nc\n");
+        App::new(
+            path,
+            "a\nb\nc\n".into(),
+            "2026-05-07".into(),
+            Config::default(),
+        )
+    }
+
+    fn build_app_with_due() -> App {
+        let path = std::env::temp_dir().join(format!(
+            "kairos-bindings-{}-{:?}.txt",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::write(&path, "Buy milk due:2026-06-30\n");
+        App::new(
+            path,
+            "Buy milk due:2026-06-30\n".into(),
+            "2026-05-07".into(),
+            Config::default(),
+        )
+    }
+
+    #[test]
+    fn plain_keys_resolve_to_their_actions() {
+        let mut app = build_app();
+        assert_eq!(resolve(&mut app, key('q')), Some(Action::Quit));
+        assert_eq!(resolve(&mut app, key('j')), Some(Action::CursorDown),);
+        assert_eq!(resolve(&mut app, key('?')), Some(Action::OpenHelp));
+        assert_eq!(resolve(&mut app, ctrl('d')), Some(Action::HalfPageDown),);
+        assert_eq!(resolve(&mut app, key('n')), Some(Action::BeginAdd),);
+        assert_eq!(resolve(&mut app, key('a')), Some(Action::ToggleArchiveView),);
+        assert_eq!(resolve(&mut app, key('A')), Some(Action::ArchiveCompleted),);
+        assert_eq!(resolve(&mut app, key('S')), Some(Action::CycleSort),);
+    }
+
+    #[test]
+    fn custom_keybinds_override_builtins() {
+        let mut app = build_app();
+        let keybinds = KeyBindings::parse("[normal]\nopen_help = \"q\"\n");
+        assert_eq!(
+            resolve_normal_key(&mut app, key('q'), &keybinds),
+            Some(Action::OpenHelp)
+        );
+        assert_eq!(
+            resolve_normal_key(&mut app, ctrl('d'), &keybinds),
+            Some(Action::HalfPageDown),
+        );
+        assert_eq!(
+            resolve_normal_key(&mut app, key('n'), &keybinds),
+            Some(Action::BeginAdd),
+        );
+        assert_eq!(
+            resolve_normal_key(&mut app, key('r'), &keybinds),
+            Some(Action::Reschedule),
+        );
+        assert_eq!(
+            resolve_normal_key(&mut app, key('a'), &keybinds),
+            Some(Action::ToggleArchiveView),
+        );
+        assert_eq!(
+            resolve_normal_key(&mut app, key('A'), &keybinds),
+            Some(Action::ArchiveCompleted),
+        );
+        assert_eq!(
+            resolve_normal_key(&mut app, key('S'), &keybinds),
+            Some(Action::CycleSort),
+        );
+    }
+
+    #[test]
+    fn capital_a_archives_only_when_completed_tasks_exist() {
+        // No completed tasks → flash, no archive write.
+        let mut app = build_app_with_archive("a\nb\nc\n", None);
+        apply_action(&mut app, Action::ArchiveCompleted);
+        assert_eq!(app.flash_active(), Some("no completed tasks to archive"));
+        assert_eq!(app.tasks().len(), 3);
+
+        // One completed task → archive_completed runs.
+        let mut app = build_app_with_archive("x 2026-05-08 done one\nb\n", None);
+        apply_action(&mut app, Action::ArchiveCompleted);
+        assert_eq!(app.tasks().len(), 1, "completed task must be archived");
+    }
+
+    #[test]
+    fn lowercase_l_returns_to_list_from_any_view() {
+        let mut app = build_app_with_archive("a\n", Some("x 2026-05-02 2026-04-02 done\n"));
+        app.set_view(View::Archive);
+        apply_action(&mut app, Action::GoList);
+        assert_eq!(app.view(), View::List);
+    }
+
+    #[test]
+    fn lowercase_a_toggles_archive_view() {
+        let mut app = build_app_with_archive("a\n", Some("x 2026-05-02 2026-04-02 done\n"));
+        assert_eq!(app.view(), View::List);
+        apply_action(&mut app, Action::ToggleArchiveView);
+        assert_eq!(app.view(), View::Archive);
+        apply_action(&mut app, Action::ToggleArchiveView);
+        assert_eq!(app.view(), View::List);
+    }
+
+    #[test]
+    fn gg_chord_only_fires_on_second_press() {
+        let mut app = build_app();
+        // First 'g' arms the chord but produces no action.
+        assert_eq!(resolve(&mut app, key('g')), None);
+        // Second 'g' fires.
+        assert_eq!(resolve(&mut app, key('g')), Some(Action::CursorTop));
+    }
+
+    #[test]
+    fn fp_chord_routes_to_pick_project() {
+        let mut app = build_app();
+        // 'f' arms the leader.
+        assert_eq!(resolve(&mut app, key('f')), Some(Action::ArmF));
+        apply_action(&mut app, Action::ArmF);
+        // 'p' after armed 'f' picks project, not cycles priority.
+        assert_eq!(resolve(&mut app, key('p')), Some(Action::PickProject));
+    }
+
+    #[test]
+    fn p_without_chord_cycles_priority() {
+        let mut app = build_app();
+        assert_eq!(resolve(&mut app, key('p')), Some(Action::CyclePriority),);
+    }
+
+    #[test]
+    fn unknown_key_returns_none() {
+        let mut app = build_app();
+        let k = KeyEvent::new(KeyCode::F(5), KeyModifiers::NONE);
+        assert_eq!(resolve(&mut app, k), None);
+    }
+
+    #[test]
+    fn yy_chord_only_fires_on_second_press() {
+        let mut app = build_app();
+        // First 'y' arms the chord but produces no action.
+        assert_eq!(resolve(&mut app, key('y')), None);
+        // Second 'y' fires the line copy.
+        assert_eq!(resolve(&mut app, key('y')), Some(Action::CopyLine));
+    }
+
+    #[test]
+    fn yb_chord_routes_to_copy_body() {
+        let mut app = build_app();
+        // 'y' arms the leader without firing.
+        assert_eq!(resolve(&mut app, key('y')), None);
+        // 'b' after armed 'y' copies the body.
+        assert_eq!(resolve(&mut app, key('b')), Some(Action::CopyBody));
+    }
+
+    #[test]
+    fn plain_b_without_y_armed_is_unhandled() {
+        let mut app = build_app();
+        // No leader → 'b' is not bound to anything else, so nothing fires.
+        assert_eq!(resolve(&mut app, key('b')), None);
+    }
+
+    #[test]
+    fn cursor_actions_clamp_to_visible_range() {
+        let mut app = build_app();
+        // 3 visible tasks, cursor starts at 0.
+        apply_action(&mut app, Action::CursorBottom);
+        assert_eq!(app.cursor, 2);
+        apply_action(&mut app, Action::CursorDown);
+        assert_eq!(app.cursor, 2);
+        apply_action(&mut app, Action::CursorTop);
+        assert_eq!(app.cursor, 0);
+        apply_action(&mut app, Action::CursorUp);
+        assert_eq!(app.cursor, 0);
+    }
+
+    /// Build an isolated App rooted in a fresh temp dir, optionally seeding
+    /// done.txt and waiting for the startup loader to land.
+    fn build_app_with_archive(todo_raw: &str, done_raw: Option<&str>) -> App {
+        use std::time::{Duration, Instant};
+        static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir =
+            std::env::temp_dir().join(format!("kairos-bindings-{}-{}", std::process::id(), n));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("create test dir");
+        let todo_path = dir.join("todo.txt");
+        std::fs::write(&todo_path, todo_raw).expect("write todo.txt");
+        if let Some(body) = done_raw {
+            std::fs::write(dir.join("done.txt"), body).expect("write done.txt");
+        }
+        let mut app = App::new(
+            todo_path,
+            todo_raw.into(),
+            "2026-05-06".into(),
+            Config::default(),
+        );
+        if done_raw.is_some() {
+            // Drain the startup archive loader so app.archive is populated.
+            let deadline = Instant::now() + Duration::from_secs(2);
+            while Instant::now() < deadline {
+                let _ = app.poll_archive();
+                if !app.archive().is_empty() {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            assert!(!app.archive().is_empty(), "archive failed to load in time");
+        }
+        app
+    }
+
+    #[test]
+    fn cursor_navigation_works_in_archive() {
+        let mut app = build_app_with_archive(
+            "a due:2026-05-04\nb due:2026-05-06\nc due:2026-05-08\n",
+            Some("x 2026-05-01 2026-04-01 first\nx 2026-05-02 2026-04-02 second\n"),
+        );
+        app.set_view(View::Archive);
+        assert_eq!(app.cursor, 0);
+        apply_action(&mut app, Action::CursorDown);
+        assert_eq!(app.cursor, 1, "Archive view must allow CursorDown");
+        apply_action(&mut app, Action::CursorTop);
+        assert_eq!(app.cursor, 0);
+    }
+
+    #[test]
+    fn archive_x_unarchives_task_under_cursor() {
+        let mut app = build_app_with_archive("a\n", Some("x 2026-05-02 2026-04-02 done one\n"));
+        app.set_view(View::Archive);
+        apply_action(&mut app, Action::ToggleComplete);
+        assert_eq!(app.archive().len(), 0, "task must leave the archive");
+        assert!(
+            app.tasks()
+                .iter()
+                .any(|t| t.raw.contains("done one") && !t.done),
+            "un-completed entry must rejoin live tasks"
+        );
+    }
+
+    #[test]
+    fn archive_dd_permanently_deletes_task_under_cursor() {
+        let mut app = build_app_with_archive("a\n", Some("x 2026-05-02 2026-04-02 done one\n"));
+        app.set_view(View::Archive);
+        apply_action(&mut app, Action::Delete);
+        assert_eq!(app.archive().len(), 0);
+        assert_eq!(app.tasks().len(), 1, "todo.txt must be untouched");
+    }
+
+    #[test]
+    fn archive_e_and_p_flash_readonly() {
+        let mut app = build_app_with_archive("a\n", Some("x 2026-05-02 2026-04-02 done one\n"));
+        app.set_view(View::Archive);
+        apply_action(&mut app, Action::BeginEdit);
+        assert_eq!(app.flash_active(), Some("read-only in archive"));
+        apply_action(&mut app, Action::CyclePriority);
+        assert_eq!(app.flash_active(), Some("read-only in archive"));
+        assert!(app.archive().tasks()[0].done);
+    }
+
+    #[test]
+    fn lowercase_r_reschedules_task_with_due_date() {
+        let mut app = build_app_with_due();
+        assert_eq!(app.tasks().len(), 1);
+        assert_eq!(app.tasks()[0].due.as_deref(), Some("2026-06-30"));
+        assert_eq!(app.mode, Mode::Normal);
+
+        assert_eq!(resolve(&mut app, key('r')), Some(Action::Reschedule),);
+        apply_action(&mut app, Action::Reschedule);
+        assert_eq!(app.mode, Mode::Insert);
+
+        let s = app.calendar_state().expect("calendar should be open");
+        assert_eq!(
+            s.focused,
+            NaiveDate::from_ymd_opt(2026, 6, 30).expect("there should be a date set")
+        );
+
+        app.calendar_add_months(1);
+        app.calendar_accept();
+        assert!(app.draft.overlay().is_none());
+        app.add_from_draft();
+        let task = app.tasks().last().expect("task added");
+        assert_eq!(task.due.as_deref(), Some("2026-07-30"));
+    }
+
+    #[test]
+    fn lowercase_r_reschedules_task_without_due_date() {
+        let mut app = build_app();
+        assert_eq!(app.tasks().len(), 3);
+        assert_eq!(app.tasks()[0].due.as_deref(), None);
+        assert_eq!(app.mode, Mode::Normal);
+
+        assert_eq!(resolve(&mut app, key('r')), Some(Action::Reschedule),);
+        apply_action(&mut app, Action::Reschedule);
+        assert_eq!(app.mode, Mode::Insert);
+
+        let s = app.calendar_state().expect("calendar should be open");
+        assert_eq!(
+            s.focused,
+            NaiveDate::from_ymd_opt(2026, 5, 7).expect("there should be a date set")
+        );
+
+        app.calendar_add_months(1);
+        app.calendar_accept();
+        app.add_from_draft();
+        assert!(app.draft.overlay().is_none());
+        let task = app.tasks().last().expect("task added");
+        assert_eq!(task.due.as_deref(), Some("2026-06-07"));
+    }
+}

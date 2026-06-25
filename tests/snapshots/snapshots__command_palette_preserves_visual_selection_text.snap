@@ -1,0 +1,37 @@
+---
+source: tests/snapshots.rs
+assertion_line: 226
+expression: buffer_to_text(&buf)
+---
+ FILTERS                   ▶▮◀ /tmp/kairos-snapshot.txt  •  15 tas DETAIL                           
+                                                                                                    
+ PROJECTS                  (2)  PRIORITY A  ────────────────────── priority  (A)                    
+   +work             4      1 [x] ▸ (A) Finish Q2 board deck +work created   2026-05-01             
+   +health           3      2 [x]   (A) Call dentist to reschedule due       2026-05-06  today      
+   +finance          2     (3)  PRIORITY B  ────────────────────── projects  +work                  
+   +home            ┌ kairos · command ────────────────────────────────────────┐ptop                
+   +learning        │ > █                                                      │                    
+   +personal        │──────────────────────────────────────────────────────────│                    
+   +travel          │ ▶ new task                                             n │                    
+                    │   edit current task (normal mode)                      e │1 Finish Q2 board   
+ CONTEXTS           │   edit current task (insert mode)                      i │aptop               
+   @errands         │   toggle complete                                      x │6                   
+   @home            │   delete task                                         dd │                    
+   @laptop          │   cycle priority                                       p │                    
+   @phone           │   add project to current task                          + │                    
+                    │   add or remove context on current task                c │                    
+                    │   copy line to clipboard                              yy │                    
+                    │   copy body to clipboard                              yb │                    
+                    │   undo                                                 u │                    
+                    │   cursor down                                      j / ↓ │                    
+                    │   cursor up                                        k / ↑ │                    
+                    │   jump to first task                                  gg │                    
+                    │   jump to last task                                    G │                    
+                    │  ↑↓ / Ctrl-N/P navigate · Enter run · Esc cancel         │                    
+                    └──────────────────────────────────────────────────────────┘                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+ COMMAND   type to filter · Enter run · Esc canc15 open · 2 selected · 2026-05-06 · kairos 0.1.6.3

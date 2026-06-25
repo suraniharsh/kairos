@@ -1,0 +1,588 @@
+# kairos
+
+A fast, keyboard-driven terminal UI for [todo.txt](http://todotxt.org/).
+Vim-style bindings, atomic writes, instant external-edit detection, and five
+hand-tuned themes — all in a single static binary.
+
+[![CI](https://github.com/suraniharsh/kairos/actions/workflows/ci.yml/badge.svg)](https://github.com/suraniharsh/kairos/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/suraniharsh/kairos?logo=github)](https://github.com/suraniharsh/kairos/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](#license)
+[![Rust](https://img.shields.io/badge/rust-2024-orange.svg?logo=rust)](https://www.rust-lang.org)
+
+![kairos demo](docs/demo.gif)
+
+## Highlights
+
+- **Pure todo.txt.** Reads and writes the [standard format](https://github.com/todotxt/todo.txt) — every line is plain text you can edit with anything else.
+- **TUI and CLI in one binary.** Run `kairos` for the interactive UI, or `kairos <command>` for a [todo.txt-cli](https://github.com/todotxt/todo.txt-cli)-compatible command line (`add`, `ls`, `do`, `pri`, `archive`, …) — scriptable, with `--json` output and `$TODO_DIR` / `$TODO_FILE` / `$DONE_FILE` support.
+- **Natural-language add.** Type prose into the add prompt — `Pay rent monthly on the first, show 3 days before due, project home` — and kairos rewrites it to canonical todo.txt for you to review and save. Local, offline, no AI service.
+- **Phone capture.** Press `s` for a QR pointing at a tiny PWA on your machine's LAN — type tasks from your phone and they appear in the list. Captures land in a sibling `inbox.txt` first, so any tool that can append a line (shell, iOS Shortcuts, cron) is also a capture source.
+- **Vim keys, no surprises.** `j` / `k` to move, `dd` to delete, `gg` / `G` to jump, `u` to undo (50 levels), chord prompts (`gg`, `dd`, `fp`, `fc`) with a 600 ms window.
+- **Command palette.** `:` or `Ctrl-P` opens a fuzzy palette over every action — type a few letters, hit Enter. Same matcher as `/` search, ranked so start-of-label hits beat word-boundary hits beat mid-word hits.
+- **Atomic, sync-friendly writes.** Every change goes through write-temp-then-rename. If another process — Dropbox, an editor, a script — modifies the file, kairos reloads on the next keypress (or within ~250 ms while idle) and flashes a notice.
+- **Sibling-file archive.** `A` moves completed tasks to `done.txt` next to your file, atomically.
+- **Filter, sort, multi-select.** Cycle by `+project` or `@context`, sort by priority / due / file order, and bulk-complete or bulk-delete in visual mode.
+- **Saved searches.** Name the active `/`-search with `fs`, then recall it any time by cycling saved filters with `ff`. Stored as plain `filter.<name>` lines in the config — hand-editable like everything else.
+- **Five themes, three densities.** Cycle with `T` and `D`. Choices persist across runs.
+- **No daemon, no database, no cloud.** One file in, one file out.
+
+## Screens
+
+| | |
+| --- | --- |
+| **Empty state** • quick-start when the file has no tasks | ![empty](docs/screenshots/empty.svg) |
+| **List** • tasks sorted by priority with filter and detail sidebars | ![list](docs/screenshots/list.svg) |
+| **Archive** • completed tasks grouped by completion date | ![archive](docs/screenshots/archive.svg) |
+| **Filter sidebar active** • `fp` cycles projects with j/k, `fc` cycles contexts; saved searches list under a **SAVED** heading with live match counts | ![filter](docs/screenshots/filter.svg) |
+| **Command palette** • `:` or `Ctrl-P` opens a fuzzy palette over every action | ![command palette](docs/screenshots/command-palette.svg) |
+| **Help** • `?` opens the full keybindings overlay | ![help](docs/screenshots/help.svg) |
+
+## Themes
+
+`T` opens a picker over five built-in themes, including Terminal, which respects your terminal palette.
+
+### Custom themes
+
+Beyond the built-ins, kairos loads any `*.toml` file you drop in
+`${XDG_CONFIG_HOME:-$HOME/.config}/kairos/themes/`. Each one joins the `T`
+picker in sorted filename order. Ready-made themes live in
+[`docs/themes/`](docs/themes) — copy one in and press `T`:
+
+```sh
+mkdir -p ~/.config/kairos/themes
+curl -o ~/.config/kairos/themes/gruvbox-dark-soft.toml \
+  https://raw.githubusercontent.com/suraniharsh/kairos/main/docs/themes/gruvbox-dark-soft.toml
+```
+
+<details>
+<summary>Theme file format and field reference</summary>
+
+A theme file is one `key = value` per line. `name` is the label shown in the
+picker; every other field is a color value. All fields are required: a file
+missing one, carrying an unparseable color, or whose `name` collides with
+another theme is skipped with a warning at startup.
+
+**Color values** accept two forms:
+
+- `#rrggbb` — a solid hex color (case-insensitive).
+- `reset` or `transparent` — inherits the terminal emulator's own background
+  color. Useful for `bg`, `panel`, and `statusbar` when you want your
+  terminal's opacity, blur, or wallpaper to show through while keeping a
+  custom text palette. Both keywords are case-insensitive and behave
+  identically (same effect as the built-in **Terminal** theme).
+
+| Field | Colors |
+| --- | --- |
+| `name` | label shown in the `T` picker (the only non-color field) |
+| `bg` | window background |
+| `panel` | filter and detail panel background |
+| `border` | panel and modal borders |
+| `fg` | primary text |
+| `dim` | secondary / muted text |
+| `accent` | logo, headings, hints, and selection markers |
+| `cursor` | current row, and the highlighted row in the `T` picker |
+| `selection` | set to the same value as `selected` |
+| `statusbar` | status bar background |
+| `status_fg` | status bar text |
+| `mode_fg` / `mode_bg` | mode chip text / background |
+| `pri_a` `pri_b` `pri_c` `pri_d` | priorities A through D |
+| `pri_other` | priorities E through Z |
+| `project` | `+project` tags |
+| `context` | `@context` tags |
+| `due` | `due:` date |
+| `overdue` | past-due date |
+| `today` | date due today |
+| `done` | completed tasks |
+| `selected` | selected-row background (visual mode) and the active filter |
+| `matched` | search-match highlight |
+
+</details>
+
+## Install
+
+### Prebuilt binaries
+
+Download the archive for your platform from the [latest release](https://github.com/suraniharsh/kairos/releases/latest) and put `kairos` on your `PATH`.
+
+Targets: `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-apple-darwin`, `aarch64-apple-darwin`, `x86_64-pc-windows-msvc`. Each archive ships with a `.sha256` checksum.
+
+### From source
+
+```sh
+cargo install --git https://github.com/suraniharsh/kairos
+```
+
+Or clone and build:
+
+```sh
+git clone https://github.com/suraniharsh/kairos
+cd kairos
+cargo build --release
+./target/release/kairos [FILE]
+```
+
+Requires the Rust 2024 edition (recent stable toolchain).
+
+## Usage
+
+`kairos` is two things in one binary: an interactive TUI, and a one-shot
+command line. With no subcommand it launches the TUI; with a recognized
+subcommand it runs the [command line](#command-line-interface) and exits.
+
+```sh
+kairos [FILE]      # launch the TUI on FILE (created if missing)
+kairos             # TUI on the default file (see resolution below)
+kairos --sample    # open the bundled sample file in the temp dir
+kairos <command>   # run a one-shot CLI command — see "Command-line interface"
+kairos update      # print upgrade instructions for your install
+kairos --help
+kairos --version
+```
+
+When a newer release is available, the status bar shows `↑ <version> (kairos
+update)` next to the version. The check runs in the background, is cached at
+`$XDG_CACHE_HOME/kairos/latest_version.json` for 24 h, and fails silently
+when offline. Set `KAIROS_NO_UPDATE_CHECK=1` to disable.
+
+### Which file kairos opens
+
+Both the TUI and the CLI resolve the todo file the same way, in order:
+
+1. An explicit `FILE` argument (TUI only).
+2. `$TODO_FILE`, if set.
+3. `$TODO_DIR/todo.txt`, if `$TODO_DIR` is set.
+4. `./todo.txt` in the current directory, if it exists.
+5. Otherwise the TUI shows a first-run prompt — press `c` to create
+   `./todo.txt` here, or `s` to open a sample todo.txt in the system temp
+   directory so you can poke around without committing to a path. (The
+   one-shot CLI is non-interactive and uses the sample directly.)
+
+The archive file is `$DONE_FILE` if set, otherwise a sibling `done.txt` next
+to the todo file. The file (and any missing parent directories) is created on
+first use. These are the same `TODO_DIR` / `TODO_FILE` / `DONE_FILE` variables
+todo.txt-cli uses, so an existing `todo.cfg` works as-is:
+
+```sh
+export TODO_DIR="$HOME/Documents/todo"
+export TODO_FILE="$TODO_DIR/todo.txt"
+export DONE_FILE="$TODO_DIR/done.txt"
+```
+
+Edits are persisted on every change via atomic write (write `.tmp`, rename).
+
+If the file changes on disk (another editor, a sync client, a script),
+kairos notices on the next keypress, or within ~250 ms while idle, and
+reloads. The keystroke that triggered the reload is consumed — press it
+again to act on the fresh state — and the status bar flashes a notice.
+
+Pressing `A` appends every completed task to a sibling `done.txt` and
+removes them from the working file (atomically: `done.txt` is written
+before the originals are dropped). `a` toggles the archive view so you
+can browse, un-archive, or permanently delete past tasks.
+
+## Command-line interface
+
+When the first argument is a recognized subcommand, kairos runs a one-shot
+command instead of launching the TUI. The surface mirrors
+[todo.txt-cli](https://github.com/todotxt/todo.txt-cli/wiki/Usage) — same
+commands, aliases, task numbering, and output — so it's a drop-in for scripts
+and aliases.
+
+```sh
+kairos add "Pay rent +home @bank due:2026-07-01"   # or: kairos a "..."
+kairos ls @bank                                     # filter by context
+kairos do 3                                          # mark task 3 complete
+kairos pri 3 A                                        # set priority
+kairos archive                                        # move done tasks to done.txt
+kairos ls --json | jq .                              # machine-readable output
+```
+
+| Command | Aliases | Arguments | Description |
+| --- | --- | --- | --- |
+| `add` | `a` | `TEXT...` | Add a task (natural-language dates supported, same as the `n` prompt). |
+| `append` | `app` | `N TEXT...` | Append text to task `N`. |
+| `prepend` | `prep` | `N TEXT...` | Prepend text to task `N`. |
+| `replace` | | `N TEXT...` | Replace task `N` entirely. |
+| `pri` | `p` | `N PRIORITY` | Set priority `A`–`Z` on task `N`. |
+| `depri` | `dp` | `N...` | Remove priority from the given tasks. |
+| `do` | `done`, `complete` | `N...` | Mark tasks complete (recurring tasks spawn their next instance). |
+| `del` | `rm` | `N [TERM]` | Delete task `N`, or remove just `TERM` from it. Prompts unless `-f`. |
+| `archive` | | | Move completed tasks to the done file. |
+| `list` | `ls` | `[TERM...]` | List tasks. `TERM` is `+project`, `@context`, or free text. |
+| `listall` | `lsa` | `[TERM...]` | List the todo file and the done file. |
+| `listpri` | `lsp` | `[PRIORITY]` | List prioritized tasks (optionally a single priority). |
+| `listproj` | `lsprj` | | List all `+projects`. |
+| `listcon` | `lsc` | | List all `@contexts`. |
+
+**Task numbers** are 1-based line numbers in the file, exactly as printed by
+`list` — stable regardless of how the list is filtered or sorted. `list`
+sorts by the full line (case-insensitive) and prints a `TODO: X of Y tasks
+shown` footer, matching todo.txt-cli.
+
+**Options:**
+
+- `-f`, `--force` — skip confirmation prompts (e.g. for `del`).
+- `--json` — emit machine-readable JSON instead of text. `list`-style commands
+  print an array of task objects; mutating commands print a result object.
+  No prompts or footers are written in this mode.
+
+Global flags may appear before the subcommand (`kairos -f del 3`).
+
+**Differences from todo.txt-cli:** `do` marks a task complete but does **not**
+auto-archive it — completed tasks stay in the file until you run `archive` (or
+press `A` in the TUI), matching kairos's interactive model. There is no `-d`
+config-file flag; configure paths with the environment variables above.
+
+## Keybindings
+
+Custom normal-mode keybindings can be added in
+`${XDG_CONFIG_HOME:-$HOME/.config}/kairos/keybinds.toml`:
+
+The block below lists every rebindable action with the key it ships with —
+copy it, then change the keys you care about and delete the rest (anything you
+leave out keeps its default). A value is a single key or an array of
+alternatives, e.g. `begin_add = ["N", "Ctrl-n"]`.
+
+```toml
+[normal]
+
+# Navigation
+cursor_down    = ["j", "Down"]
+cursor_up      = ["k", "Up"]
+cursor_top     = "gg"
+cursor_bottom  = "G"
+half_page_down = "Ctrl-d"
+half_page_up   = "Ctrl-u"
+
+# Editing
+begin_add            = "n"
+begin_edit           = "e"
+begin_edit_insert    = "i"
+toggle_complete      = "x"
+delete               = "dd"
+reschedule           = "r"
+cycle_priority       = "p"
+begin_prompt_context = "c"
+copy_line            = "yy"
+copy_body            = "yb"
+undo                 = "u"
+# begin_prompt_project defaults to "+", which can't be written here (the
+# parser reads "+" as a modifier separator). Pick another key to move it, e.g.
+# begin_prompt_project = "P"
+
+# Filtering, sort, view
+begin_search        = "/"
+arm_f               = "f"        # leader for the fp / fc / ff / fs chords
+pick_project        = "fp"
+pick_context        = "fc"
+pick_saved_filter   = "ff"
+save_current_filter = "fs"
+cycle_sort          = "S"
+toggle_visual       = "v"
+toggle_selected     = "space"
+go_list             = "l"
+toggle_archive_view = "a"
+archive_completed   = "A"
+toggle_show_done    = "H"
+toggle_show_future  = "F"
+
+# Layout & theme
+toggle_left_pane  = "["
+toggle_right_pane = "]"
+open_theme_picker = "T"
+cycle_density     = "D"
+toggle_line_num   = "L"
+# cycle_theme has no default — bind a key to cycle themes without the picker:
+# cycle_theme = "Ctrl-t"
+
+# System
+open_command_palette = [":", "Ctrl-P"]
+open_share           = "s"
+open_help            = "?"
+open_settings        = ","
+escape_stack         = "Esc"
+quit                 = "q"
+```
+
+Custom bindings are checked before the defaults. The default bindings remain
+available unless the same key or two-key chord is bound to another action in
+the file. Action names are snake_case, matching the names in the command
+palette where possible: `toggle_complete`, `pick_project`,
+`open_theme_picker`, and so on. Key names can be single characters, two-key
+chords like `ZZ`, modifier forms like `Ctrl-n` / `Alt-x`, named keys like
+`Esc`, `Enter`, `Tab`, arrows, `Page-Up`, `Page-Down`, or `F1` through `F24`.
+
+### Navigation
+
+| Key | Action |
+| --- | --- |
+| `j` / `↓` | next task |
+| `k` / `↑` | previous task |
+| `gg` | first task |
+| `G` | last task |
+| `Ctrl-d` / `Ctrl-u` | half-page down / up |
+
+### Editing
+
+| Key | Action |
+| --- | --- |
+| `n` | add task |
+| `e` | edit current task in Normal mode (see [Edit dialog](#edit-dialog)) |
+| `i` | edit current task in Insert mode (see [Edit dialog](#edit-dialog)) |
+| `x` | toggle complete |
+| `dd` | delete task |
+| `p` | cycle priority A → B → C → · |
+| `c` | add or remove a context |
+| `+` | add a project |
+| `yy` | copy current line to clipboard |
+| `yb` | copy current body only (no priority, dates, projects, contexts, `key:value`) |
+| `u` | undo (50 levels) |
+
+### Edit dialog
+
+The edit dialog uses vim-style modal editing. Press `i` to edit the current task
+starting in **Insert mode** — start typing immediately. Press `e` to start in
+**Normal mode** so you can navigate before changing anything. The add prompt
+(`n`) also opens directly in Insert mode.
+
+The modal keys below apply in Normal mode:
+
+| Key | Action |
+| --- | --- |
+| `h` / `←` | move cursor left |
+| `l` / `→` | move cursor right |
+| `w` | jump to start of next word |
+| `b` | jump to start of previous word |
+| `e` | jump to end of current word |
+| `x` | delete character under cursor |
+| `dw` | delete to start of next word |
+| `cw` | delete to start of next word and enter Insert mode |
+| `i` | enter Insert mode before cursor |
+| `a` | enter Insert mode after cursor |
+| `A` | enter Insert mode at end of line |
+| `Esc` (in Insert) | return to Normal mode |
+| `Esc` (in Normal) | cancel and close |
+| `Enter` (in Insert and Normal) | save |
+
+### Filtering, sort, view
+
+| Key | Action |
+| --- | --- |
+| `/` | search |
+| `fp` | filter by project (`j` / `k` cycles, `Esc` clears) |
+| `fc` | filter by context (`j` / `k` cycles, `Esc` clears) |
+| `ff` | pick a saved search (`j` / `k` cycles, `Enter` keeps, `Esc` reverts) |
+| `fs` | save the active `/`-search as a named filter |
+| `S` | cycle sort: priority → due → file order |
+| `v` | enter visual / multi-select; `space` toggles a row |
+| `x` / `dd` (in visual) | bulk-complete / bulk-delete the selection |
+| `l` | list (default) view |
+| `a` | toggle archive view |
+| `A` | archive completed tasks → `done.txt` |
+| `H` | toggle showing done tasks in the main list |
+
+### Layout & theme
+
+| Key | Action |
+| --- | --- |
+| `[` | toggle filter sidebar |
+| `]` | toggle detail sidebar |
+| `T` | open theme picker |
+| `D` | cycle density: compact → comfortable → cozy |
+| `L` | toggle line numbers |
+
+### System
+
+| Key | Action |
+| --- | --- |
+| `:` / `Ctrl-P` | command palette |
+| `s` | share capture QR (phone PWA) |
+| `?` | help overlay |
+| `,` | settings overlay |
+| `q` | quit |
+
+Two-key chord prompts (`gg`, `dd`, `yy`, `yb`, `fp`, `fc`, `ff`, `fs`) show
+a `g…` / `d…` / `y…` / `f…` indicator in the status-bar mode chip while the
+leader is armed; the window is 600 ms.
+
+Copy uses the OSC 52 terminal escape, so it works locally and over SSH on
+any terminal that supports it (kitty, alacritty, wezterm, iTerm2, foot,
+modern xterm; tmux when `set -g set-clipboard on`). Older terminals will
+silently ignore the keystroke.
+
+## todo.txt format
+
+Standard [todo.txt](https://github.com/todotxt/todo.txt) lines:
+
+```
+(A) 2026-04-28 Call dentist @phone +health due:2026-05-08
+```
+
+- `(A)` — priority, A through Z (omit for none)
+- `2026-04-28` — creation date in ISO 8601
+- `+project` — project tag
+- `@context` — context tag
+- `key:value` — extension; `due:YYYY-MM-DD` is recognized for sort and
+  due-bucket grouping in the list view. Keys you'd rather not see can be
+  hidden from the rows via [`hide_keys`](#hiding-keyvalue-tags)
+- `rec:[+]N{d,b,w,m,y}` — recurrence; on completion (`x`), kairos inserts
+  a fresh copy of the task with `due:` advanced by `N` days, business
+  days (Mon–Fri), weeks, months, or years. The `+` prefix means
+  *strict* recurrence anchored to the previous due date (e.g.
+  `rec:+1m` for monthly rent on the 15th); without it, the new due is
+  computed from the completion date (e.g. `rec:1w` for "water plants
+  one week after I last did").
+
+Completed tasks are prefixed with `x ` and a completion date:
+
+```
+x 2026-05-05 2026-05-01 Submit expense report +work
+```
+
+Recurring example:
+
+```
+2026-05-09 Pay rent due:2026-05-15 rec:+1m
+```
+
+Pressing `x` on the line above marks the original complete *and* inserts
+`2026-05-09 Pay rent due:2026-06-15 rec:+1m`. `u` undoes both at once.
+
+## Natural-language add
+
+Press `n` to open the add prompt. Type the task in plain English. When the
+buffer contains recognized phrases (dates, weekdays, recurrence, project /
+context names, priority), pressing Enter rewrites the draft into canonical
+todo.txt — review or tweak it, then Enter again to save.
+
+| What you type | What lands in the draft |
+| --- | --- |
+| `Pay rent monthly on the first of the month, show the todo 3 days before the due date. It's part of project home and context bank` | `Pay rent +home @bank due:2026-06-01 rec:+1m t:-3d` |
+| `Buy milk tomorrow` | `Buy milk due:2026-05-12` |
+| `Call mom every week starting Friday for project family` | `Call mom +family due:2026-05-15 rec:+1w` |
+| `Submit timesheet every other friday show 1 day before` | `Submit timesheet due:2026-05-15 rec:+2w t:-1d` |
+| `Daily standup high priority` | `(A) standup rec:+1d` |
+| `Annual review April 15 +work @office` | `Annual review +work @office due:2027-04-15` |
+
+Recognized vocabulary:
+
+- **Dates** — `today`, `tonight`, `tomorrow`, `yesterday`, weekdays (`monday` / `mon` …), months (`april 15`, `15th of april`), `in 3 days`, `the first of the month`, ISO `2026-05-15`.
+- **Recurrence** — `daily`, `weekly`, `biweekly`, `monthly`, `yearly`, `annually`, `every monday`, `every 2 weeks`, `every other friday`, `every business day`.
+- **Threshold** — `show 3 days before due`, `2 weeks before due`.
+- **Projects / contexts** — prose form `project home` and `context bank`, or the standard `+home` / `@bank` sigils.
+- **Priority** — `high priority` → A, `medium priority` → B, `low priority` → C, or `priority A`.
+
+Parsing is rule-based and runs locally — no network calls, no API key. If
+the buffer already contains a `due:`, `rec:`, or `t:` token, kairos assumes
+you've typed canonical form and saves it directly on the first Enter.
+
+## Phone capture
+
+Press `s` to start a tiny capture server on your machine's LAN address and
+display a QR code for it. Scan it from your phone — any modern browser — to
+get a minimal PWA you can install to your home screen. Type a task, tap
+Add, and within a tick it shows up in your task list.
+
+Captures never touch `todo.txt` directly. They land in a sibling
+`inbox.txt`, which kairos drains on every external-change poll: each line
+is run through the same natural-language pipeline as the `n` add prompt,
+given a creation date if missing, and merged into `todo.txt` as a single
+undoable batch (`u` rolls back the whole drain at once).
+
+That makes `inbox.txt` a general capture endpoint, not just a PWA backend.
+Anything that can append a line works as a producer:
+
+```sh
+echo "Refill prescription tomorrow" >> ~/notes/inbox.txt
+echo "Call dentist due:2026-06-01" >> ~/notes/inbox.txt
+```
+
+Shell aliases, iOS Shortcuts writing to a synced folder, cron jobs,
+email-to-file gateways — pick your producer. As long as it appends a line
+to the sibling `inbox.txt`, kairos picks it up.
+
+The server:
+
+- Binds on first `s` press and stays up for the rest of the session.
+  Subsequent `s` presses just re-show the QR; any key dismisses the
+  overlay.
+- Listens on `0.0.0.0:<port>` so phones on the same WiFi can reach it.
+  The port is OS-assigned on first use and persisted to `config.toml` so
+  phone bookmarks survive across sessions.
+- Gates every protected route on a 64-character hex token baked into the
+  URL path. The token is generated once, persisted to `config.toml`, and
+  compared in constant time.
+- Speaks plain HTTP — **trusted networks only.** On a shared or public
+  WiFi anyone passive-sniffing can recover the token. To rotate, delete
+  `share_token` from `config.toml` and press `s` again.
+
+Drains from kairos-managed producers are crash-safe: the capture server
+holds the same advisory lock as the TUI's rename-and-merge, and any
+staging file left over from an interrupted drain is replayed on the
+next session. Plain shell appends are useful for lightweight capture,
+but they do not take that lock; use the capture server or the same lock
+if a producer must be serialized with the TUI drain.
+
+## Configuration
+
+Persisted to `${XDG_CONFIG_HOME:-$HOME/.config}/kairos/config.toml`. Cycling
+theme, density, or sort, and toggling sidebars / line-numbers / done-visibility
+all update the file. Unknown keys are ignored, so older binaries don't break
+on newer files.
+
+Two additional keys, `share_token` and `share_port`, are written by the
+[phone capture](#phone-capture) server on first use. Treat `share_token`
+as a secret — anyone who has the value and LAN reach can append to your
+inbox. Delete the key from `config.toml` to rotate it on the next `s`
+press.
+
+Saved searches (created with `fs`) are written one per line as
+`filter.<name> = <query>`, where `<query>` is the `/`-search needle. They
+round-trip as plain text, so you can add, rename, or delete them by editing
+`config.toml` directly; a repeated `filter.<name>` keeps the last value, and
+`<name>` may not contain `=`.
+
+### Hiding `key:value` tags
+
+Some `key:value` extensions are for machines, not eyes — e.g. a `uid:` you
+sync against. Add a comma-separated `hide_keys` line to `config.toml` and
+those keys' tokens are dropped from the task rows (list and archive views):
+
+```toml
+hide_keys = uid, sync
+```
+
+Matching is case-insensitive. Hiding is purely visual — the tags stay on
+disk untouched, still serialize, and still show in the detail pane's **RAW**
+section (a deliberate escape hatch). Searches still match hidden text; the
+hidden characters just aren't drawn.
+
+## Development
+
+```sh
+mise run fmt      # cargo fmt --all
+mise run clippy   # cargo clippy --all-targets --locked -- -D warnings
+mise run test     # cargo test --locked
+```
+
+CI runs all three on every push and pull request. Tasks are also runnable as
+plain `cargo` commands if you don't use [mise](https://mise.jdx.dev/).
+
+## Acknowledgments
+
+- [todo.txt](http://todotxt.org/) by Gina Trapani — the format that makes a tool like this possible.
+- [ratatui](https://ratatui.rs/) and [crossterm](https://github.com/crossterm-rs/crossterm) — the rendering and terminal-input crates kairos is built on.
+
+## Roadmap
+
+Planned and in-flight work lives in [`todo.txt`](./todo.txt) — eat your own dog food.
+
+## Contributing
+
+Issues and pull requests are welcome. For larger changes, please open an
+issue first to discuss the approach. Run `mise run fmt clippy test` (or the
+plain cargo equivalents) before submitting.
+
+## License
+
+Released under the [MIT License](https://opensource.org/licenses/MIT).

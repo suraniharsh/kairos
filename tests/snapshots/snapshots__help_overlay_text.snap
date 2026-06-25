@@ -1,0 +1,37 @@
+---
+source: tests/snapshots.rs
+assertion_line: 226
+expression: buffer_to_text(&buf)
+---
+ FILTERS                   ▶▮◀ /tmp/kairos-snapshot.txt  •  15 tas DETAIL                           
+     ┌ kairos · help ─────────────────────────────────────────────────────────────────────────┐     
+ PROJ│  NAVIGATION                                  VIEW                                      │     
+   +w│    j / ↓             next task                 /                 fuzzy search          │     
+   +h│    k / ↑             previous task             fp / fc           filter project/context│     
+   +f│    gg                first task                ff / fs           saved filter pick/save│     
+   +h│    G                 last task                 S                 cycle sort            │     
+   +l│    Ctrl-d / Ctrl-u   page down / up            v                 visual / multi-select │     
+   +p│                                                l                 list view             │     
+   +t│  EDITING                                       a                 archive view          │     
+     │    n                 new task                  A                 archive completed     │rd   
+ CONT│    e                 edit line (normal)        H                 show done in list     │     
+   @e│    i                 edit line (insert)        F                 show future in list   │     
+   @h│    r                 reschedule task           [ / ]             toggle filter / detail│     
+   @l│    x                 toggle complete           T                 cycle theme           │     
+   @p│    dd                delete task               D                 cycle density         │     
+     │    p                 cycle priority A→B→C→·    L                 toggle line numbers   │     
+     │    c                 add/remove context                                                │     
+     │    +                 add project             SYSTEM                                    │     
+     │    yy                copy line to clipboard    : / Ctrl-P        command palette       │     
+     │    yb                copy body only            s                 share capture QR      │     
+     │    u                 undo                      ? / ,             help / settings       │     
+     │                                                q                 quit                  │     
+     │────────────────────────────────────────────────────────────────────────────────────────│     
+     │  FORMAT                                                                                │     
+     │    (A)               priority A-Z              due:YYYY-MM-DD    due date              │     
+     │    YYYY-MM-DD        creation / done date      rec:Nu            recur (u in d/w/m/y/b)│     
+     │    +project          project tag(s)            rec:+Nu           strict: anchor on due:│     
+     │    @context          context tag(s)            x DATE BODY       completed task prefix │     
+     └────────────────────────────────────────────────────────────────────────────────────────┘     
+                                                                                                    
+ HELP   ? close help                                         15 open · 2026-05-06 · kairos 0.1.6.3
