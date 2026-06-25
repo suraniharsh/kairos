@@ -78,7 +78,7 @@ pub fn run(argv: &[String]) -> Result<Option<i32>> {
     let args = match parse_args(&rest) {
         Ok(a) => a,
         Err(e) => {
-            eprintln!("tuxedo: {e}");
+            eprintln!("kairos: {e}");
             return Ok(Some(2));
         }
     };
@@ -113,7 +113,7 @@ pub fn run(argv: &[String]) -> Result<Option<i32>> {
         "listproj" | "lsprj" => cmd_listtags(&store, json, TagKind::Project),
         "listcon" | "lsc" => cmd_listtags(&store, json, TagKind::Context),
         other => {
-            eprintln!("tuxedo: unknown command: {other}");
+            eprintln!("kairos: unknown command: {other}");
             2
         }
     };
@@ -123,12 +123,12 @@ pub fn run(argv: &[String]) -> Result<Option<i32>> {
 // ----- helpers -----------------------------------------------------------
 
 fn err(msg: impl std::fmt::Display) -> i32 {
-    eprintln!("tuxedo: {msg}");
+    eprintln!("kairos: {msg}");
     1
 }
 
 fn usage(msg: impl std::fmt::Display) -> i32 {
-    eprintln!("usage: tuxedo {msg}");
+    eprintln!("usage: kairos {msg}");
     2
 }
 
@@ -172,7 +172,7 @@ fn store_error(json: bool, action: &str, e: impl std::fmt::Display) -> i32 {
         s.push('}');
         eprintln!("{s}");
     } else {
-        eprintln!("tuxedo: {e}");
+        eprintln!("kairos: {e}");
     }
     1
 }
@@ -387,7 +387,7 @@ fn cmd_done(store: &mut Store, pos: &[String], json: bool) -> i32 {
             // todo.sh format for the completion itself.
             println!("{n} {}", t.raw);
             println!("{prefix}: {n} marked as done.");
-            // Recurrence is a tuxedo feature todo.sh lacks; surface the spawned
+            // Recurrence is a kairos feature todo.sh lacks; surface the spawned
             // next instance as a freshly-added task in the same idiom.
             if let Some((nn, nt)) = next {
                 println!("{nn} {}", nt.raw);

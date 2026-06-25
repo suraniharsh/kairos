@@ -10,7 +10,7 @@ pub(crate) fn test_path() -> std::path::PathBuf {
     use std::sync::atomic::{AtomicUsize, Ordering};
     static N: AtomicUsize = AtomicUsize::new(0);
     let n = N.fetch_add(1, Ordering::Relaxed);
-    std::env::temp_dir().join(format!("tuxedo-test-{}-{}.txt", std::process::id(), n))
+    std::env::temp_dir().join(format!("kairos-test-{}-{}.txt", std::process::id(), n))
 }
 
 pub(crate) fn build_app(raw: &str) -> App {

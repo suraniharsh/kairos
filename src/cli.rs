@@ -126,7 +126,7 @@ enum TargetDecision {
 /// archived rows don't leak back as duplicates.
 pub fn sample_path() -> io::Result<PathBuf> {
     let dir = std::env::temp_dir();
-    let pb = dir.join("tuxedo-sample.txt");
+    let pb = dir.join("kairos-sample.txt");
     std::fs::write(&pb, sample::TODO_RAW)?;
     match std::fs::remove_file(dir.join("done.txt")) {
         Ok(_) => {}

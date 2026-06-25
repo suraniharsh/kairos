@@ -305,7 +305,7 @@ mod tests {
 
     fn dir_for(tag: &str) -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!(
-            "tuxedo-archive-test-{}-{}",
+            "kairos-archive-test-{}-{}",
             std::process::id(),
             tag
         ));
@@ -505,7 +505,7 @@ mod tests {
     fn persist_reports_write_failure() {
         let mut store = build_store("a\n");
         let missing_parent = std::env::temp_dir()
-            .join(format!("tuxedo-missing-parent-{}", std::process::id()))
+            .join(format!("kairos-missing-parent-{}", std::process::id()))
             .join("todo.txt");
         let _ = std::fs::remove_dir_all(missing_parent.parent().unwrap());
         store.file_path = missing_parent;

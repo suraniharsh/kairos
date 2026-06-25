@@ -1,7 +1,11 @@
 [package]
-name = "tuxedo"
-version = "2026.6.3"
+name = "kairos"
+version = "0.1.0"
 edition = "2024"
+authors = ["suraniharsh <harshsurani00@gmail.com>"]
+description = "A terminal-based task logger and time tracker"
+license = "MIT"
+repository = "https://github.com/suraniharsh/ritual-tui"
 
 [dependencies]
 anyhow = "1.0"

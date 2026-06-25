@@ -20,14 +20,14 @@ use ratatui::backend::TestBackend;
 use ratatui::buffer::Buffer;
 use ratatui::style::{Color, Modifier};
 
-use tuxedo::app::{
+use kairos::app::{
     App, BuilderField, CalendarState, CalendarTarget, Density, DraftOverlay, Mode,
     PriorityChooserState, RecurrenceBuilderState, SlashMenuState, View,
 };
-use tuxedo::config::Config;
-use tuxedo::recurrence::RecUnit;
-use tuxedo::sample;
-use tuxedo::ui;
+use kairos::config::Config;
+use kairos::recurrence::RecUnit;
+use kairos::sample;
+use kairos::ui;
 
 const COLS: u16 = 100;
 const ROWS: u16 = 32;
@@ -35,13 +35,13 @@ const ROWS: u16 = 32;
 /// File path used in every fixture. Hard-coded (not `temp_dir()`) so the
 /// header line that displays it stays byte-identical across runs and
 /// machines. The file is never actually written; `App::new` only stores it.
-const FIXTURE_PATH: &str = "/tmp/tuxedo-snapshot.txt";
+const FIXTURE_PATH: &str = "/tmp/kairos-snapshot.txt";
 
 /// Config-file path for the settings-overlay fixture. Hard-coded for the
 /// same reason as `FIXTURE_PATH`: `Config::path()` resolves `$HOME` at
 /// runtime, which would otherwise bake the author's home directory into
 /// the snapshot and break on any other machine (CI included).
-const FIXTURE_CONFIG_PATH: &str = "/tmp/tuxedo-snapshot.toml";
+const FIXTURE_CONFIG_PATH: &str = "/tmp/kairos-snapshot.toml";
 
 fn make_app() -> App {
     // Seed the fixture file on disk so any snapshot test that exercises a
@@ -363,7 +363,7 @@ fn insert_dialog_after_nl_parse() {
     // runs after as a contract check on AddOutcome::Parsed — a regression
     // either way will fail the test.
     snapshot_app("insert_dialog_after_nl_parse", &app);
-    assert_eq!(outcome, tuxedo::app::AddOutcome::Parsed);
+    assert_eq!(outcome, kairos::app::AddOutcome::Parsed);
 }
 
 #[test]
@@ -498,7 +498,7 @@ fn list_scrolls_to_keep_cursor_visible_when_below_fold() {
     app.prefs.layout.right = false;
     // Switch to file-order sort so rows render flat (no priority/due groups
     // injecting extra header lines into the line-index math).
-    while app.prefs.sort != tuxedo::app::Sort::File {
+    while app.prefs.sort != kairos::app::Sort::File {
         app.cycle_sort();
     }
 

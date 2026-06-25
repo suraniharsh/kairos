@@ -1,6 +1,6 @@
 //! User-configurable normal-mode keybindings.
 //!
-//! Path: `${XDG_CONFIG_HOME:-$HOME/.config}/tuxedo/keybinds.toml`
+//! Path: `${XDG_CONFIG_HOME:-$HOME/.config}/kairos/keybinds.toml`
 //!
 //! Format: a `[normal]` table whose keys are `Action` names in snake_case and
 //! whose values are a string or array of strings, for example:
@@ -110,7 +110,7 @@ impl KeyBindings {
     }
 
     pub fn path_in(xdg_base: &Path) -> PathBuf {
-        xdg_base.join("tuxedo").join("keybinds.toml")
+        xdg_base.join("kairos").join("keybinds.toml")
     }
 
     fn push_normal(&mut self, binding: Binding) {
@@ -450,8 +450,8 @@ mod tests {
     }
 
     #[test]
-    fn path_uses_tuxedo_keybinds_toml() {
+    fn path_uses_kairos_keybinds_toml() {
         let path = KeyBindings::path_in(Path::new("/tmp/config"));
-        assert!(path.ends_with("tuxedo/keybinds.toml"));
+        assert!(path.ends_with("kairos/keybinds.toml"));
     }
 }

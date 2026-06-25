@@ -1,7 +1,7 @@
 //! Sibling `inbox.txt` capture flow.
 //!
 //! External producers (shell appends, iOS Shortcuts writing to a sync
-//! folder, `tuxedo serve`'s POST handler) drop one task per line into a
+//! folder, `kairos serve`'s POST handler) drop one task per line into a
 //! sibling `inbox.txt`. The running TUI drains it on each external-change
 //! poll (~250 ms): each line is run through the natural-language
 //! pipeline, given a creation date if missing, validated, and merged
@@ -15,8 +15,8 @@ use chrono::NaiveDate;
 use crate::{nl, todo};
 
 pub const FILENAME: &str = "inbox.txt";
-pub const STAGING_FILENAME: &str = "inbox.txt.tuxedo-staging";
-pub const LOCK_FILENAME: &str = "inbox.txt.tuxedo-lock";
+pub const STAGING_FILENAME: &str = "inbox.txt.kairos-staging";
+pub const LOCK_FILENAME: &str = "inbox.txt.kairos-lock";
 
 /// Sibling `inbox.txt` next to the given todo.txt path. Falls back to
 /// the current directory if `todo_path` has no parent.
@@ -25,10 +25,10 @@ pub fn path_for(todo_path: &Path) -> PathBuf {
 }
 
 /// Staging file used during drain. The merge step renames
-/// `inbox.txt` → `inbox.txt.tuxedo-staging` *before* reading, so any
+/// `inbox.txt` → `inbox.txt.kairos-staging` *before* reading, so any
 /// concurrent external append after the rename lands in a fresh
 /// `inbox.txt` rather than being lost. The staging file is deleted only
-/// after the merged `todo.txt` has been written atomically; if tuxedo
+/// after the merged `todo.txt` has been written atomically; if kairos
 /// crashes between, the next drain picks the staging file up and merges
 /// it as if it were a regular inbox.
 pub fn staging_path_for(todo_path: &Path) -> PathBuf {
@@ -36,7 +36,7 @@ pub fn staging_path_for(todo_path: &Path) -> PathBuf {
 }
 
 /// Advisory-lock file guarding `inbox.txt`. Held briefly by both the
-/// `tuxedo serve` POST handler (around its append) and the TUI drain
+/// `kairos serve` POST handler (around its append) and the TUI drain
 /// (around its rename-and-merge). Without it the writer's `open` could
 /// pin the inode after the drain has renamed it to `staging`, the
 /// drain reads the still-empty staging, deletes it, and the writer's
@@ -76,7 +76,7 @@ fn sibling(todo_path: &Path, name: &str) -> PathBuf {
 /// Full save pipeline for one free-text line: natural-language rewrite,
 /// creation-date prepend, validation. Returns the parsed [`todo::Task`]
 /// ready to push onto `App::tasks`. Used by the inbox drain and the
-/// `tuxedo serve` POST handler.
+/// `kairos serve` POST handler.
 pub fn canonicalize_line(text: &str, today: NaiveDate) -> Result<todo::Task, todo::ParseError> {
     let mut text = text.trim().to_string();
     if text.is_empty() {
@@ -142,7 +142,7 @@ mod tests {
         let p = PathBuf::from("/tmp/work/todo.txt");
         assert_eq!(
             staging_path_for(&p),
-            PathBuf::from("/tmp/work/inbox.txt.tuxedo-staging"),
+            PathBuf::from("/tmp/work/inbox.txt.kairos-staging"),
         );
     }
 
@@ -150,7 +150,7 @@ mod tests {
     fn acquire_lock_blocks_a_concurrent_holder() {
         use std::sync::mpsc;
         use std::time::Duration;
-        let dir = std::env::temp_dir().join(format!("tuxedo-inbox-lock-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("kairos-inbox-lock-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let todo_path = dir.join("todo.txt");

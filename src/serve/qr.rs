@@ -1,4 +1,4 @@
-//! Terminal QR code rendering for `tuxedo serve`. Uses the `qrcode`
+//! Terminal QR code rendering for `kairos serve`. Uses the `qrcode`
 //! crate's `unicode::Dense1x2` renderer, which encodes each pair of
 //! rows into a single line of half-block glyphs — readable in any
 //! modern terminal without an image library.

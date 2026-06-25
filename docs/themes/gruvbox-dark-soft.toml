@@ -1,5 +1,5 @@
-# Gruvbox Dark (soft contrast) for tuxedo.
-# Copy into ${XDG_CONFIG_HOME:-$HOME/.config}/tuxedo/themes/ and press T to select it.
+# Gruvbox Dark (soft contrast) for kairos.
+# Copy into ${XDG_CONFIG_HOME:-$HOME/.config}/kairos/themes/ and press T to select it.
 name = Gruvbox Dark Soft
 bg = #32302f
 panel = #3c3836

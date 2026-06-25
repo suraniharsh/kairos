@@ -200,7 +200,7 @@ impl App {
     /// config, reuse them so phone bookmarks survive across sessions.
     /// Otherwise, generate a fresh token, let the OS pick a port, and
     /// write both back to the config. If the persisted port is taken
-    /// (another tuxedo instance on the same machine, say), fall back to
+    /// (another kairos instance on the same machine, say), fall back to
     /// an OS-assigned port and rewrite the config so the next session
     /// starts fresh.
     pub fn ensure_share_started(&mut self) -> Result<&ShareInfo, String> {

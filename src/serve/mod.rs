@@ -65,11 +65,11 @@ pub fn start(todo_path: PathBuf, token: String, port: u16) -> Result<ShareInfo> 
     let token_arc: Arc<str> = Arc::from(token.as_str());
     let path_arc: Arc<Path> = Arc::from(todo_path.as_path());
     thread::Builder::new()
-        .name("tuxedo-capture-server".into())
+        .name("kairos-capture-server".into())
         .spawn(move || {
             for request in server.incoming_requests() {
                 if let Err(e) = handle(request, &path_arc, &token_arc) {
-                    eprintln!("tuxedo capture: request error: {e}");
+                    eprintln!("kairos capture: request error: {e}");
                 }
             }
         })
@@ -248,7 +248,7 @@ mod tests {
     #[test]
     fn tasks_view_separates_open_and_inbox() {
         let dir =
-            std::env::temp_dir().join(format!("tuxedo-serve-tasks-view-{}", std::process::id()));
+            std::env::temp_dir().join(format!("kairos-serve-tasks-view-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let todo_path = dir.join("todo.txt");
@@ -265,7 +265,7 @@ mod tests {
     #[test]
     fn tasks_view_handles_missing_inbox() {
         let dir =
-            std::env::temp_dir().join(format!("tuxedo-serve-tasks-missing-{}", std::process::id()));
+            std::env::temp_dir().join(format!("kairos-serve-tasks-missing-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let todo_path = dir.join("todo.txt");
@@ -277,7 +277,7 @@ mod tests {
 
     #[test]
     fn start_binds_and_serves() {
-        let dir = std::env::temp_dir().join(format!("tuxedo-serve-start-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("kairos-serve-start-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let todo_path = dir.join("todo.txt");

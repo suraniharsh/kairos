@@ -1,4 +1,4 @@
-//! Embedded static assets served by `tuxedo serve`. Inlined via
+//! Embedded static assets served by `kairos serve`. Inlined via
 //! `include_str!` so the binary stays self-contained — no runtime
 //! filesystem lookup, no separate asset directory to ship.
 

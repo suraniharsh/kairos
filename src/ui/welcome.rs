@@ -1,4 +1,4 @@
-//! First-run welcome overlay: shown when `tuxedo` is launched with no target
+//! First-run welcome overlay: shown when `kairos` is launched with no target
 //! and no `./todo.txt` exists. Offers to create a `./todo.txt` here or open
 //! the bundled sample. Key handling lives in `handle_welcome` (main.rs);
 //! `q`/`Esc` quits without creating anything.
@@ -33,7 +33,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         .title(Line::from(vec![
             Span::raw(" "),
             Span::styled(
-                "tuxedo",
+                "kairos",
                 Style::default()
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),

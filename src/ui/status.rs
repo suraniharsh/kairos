@@ -75,7 +75,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     // accent color (the rest of the right text is dim).
     let update_suffix = app
         .update_available()
-        .map(|tag| format!(" · ↑ {tag} (tuxedo update)"));
+        .map(|tag| format!(" · ↑ {tag} (kairos update)"));
     let right_text = right_parts.join(" · ");
 
     // Append a chord indicator (e.g. " g…") so two-key sequences like gg/dd/fp

@@ -1,4 +1,4 @@
-//! Network helpers for `tuxedo serve`: LAN-IP discovery, token
+//! Network helpers for `kairos serve`: LAN-IP discovery, token
 //! generation, form-encoded body decoding, and the atomic append to
 //! `inbox.txt` that the POST handler uses.
 
@@ -221,7 +221,7 @@ mod tests {
     #[test]
     fn append_creates_inbox_when_missing() {
         let dir = std::env::temp_dir().join(format!(
-            "tuxedo-serve-append-{}-{}",
+            "kairos-serve-append-{}-{}",
             std::process::id(),
             line!()
         ));
@@ -240,7 +240,7 @@ mod tests {
     #[test]
     fn append_rejects_empty_line() {
         let dir =
-            std::env::temp_dir().join(format!("tuxedo-serve-append-empty-{}", std::process::id()));
+            std::env::temp_dir().join(format!("kairos-serve-append-empty-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let todo_path = dir.join("todo.txt");
@@ -255,7 +255,7 @@ mod tests {
         // dangling line — both lines have to land separately so the
         // drain parses them as distinct tasks.
         let dir =
-            std::env::temp_dir().join(format!("tuxedo-serve-append-noeol-{}", std::process::id()));
+            std::env::temp_dir().join(format!("kairos-serve-append-noeol-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let todo_path = dir.join("todo.txt");

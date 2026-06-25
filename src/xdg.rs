@@ -15,7 +15,7 @@ pub fn config_home() -> Option<PathBuf> {
             return Some(p);
         }
         eprintln!(
-            "tuxedo: ignoring non-absolute XDG_CONFIG_HOME={:?} (per XDG spec)",
+            "kairos: ignoring non-absolute XDG_CONFIG_HOME={:?} (per XDG spec)",
             p.display()
         );
     }

@@ -8,7 +8,7 @@ pub(crate) fn test_path() -> std::path::PathBuf {
     use std::sync::atomic::{AtomicUsize, Ordering};
     static N: AtomicUsize = AtomicUsize::new(0);
     let n = N.fetch_add(1, Ordering::Relaxed);
-    std::env::temp_dir().join(format!("tuxedo-core-test-{}-{}.txt", std::process::id(), n))
+    std::env::temp_dir().join(format!("kairos-core-test-{}-{}.txt", std::process::id(), n))
 }
 
 /// Build a `Store` rooted at a fresh temp file seeded with `raw`. Archive loads

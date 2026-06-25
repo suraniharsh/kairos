@@ -9,14 +9,14 @@ use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, Ke
 
 use std::io::Write;
 
-use tuxedo::action::Action;
-use tuxedo::app::{AddOutcome, App, CalendarTarget, DialogInputMode, Mode, OverlayKind, View};
-use tuxedo::cli;
-use tuxedo::config::Config;
-use tuxedo::keybinds::{KeyBindings, ResolvedKey};
-use tuxedo::theme;
-use tuxedo::ui::hyperlinks;
-use tuxedo::{clipboard, todo, ui, update};
+use kairos::action::Action;
+use kairos::app::{AddOutcome, App, CalendarTarget, DialogInputMode, Mode, OverlayKind, View};
+use kairos::cli;
+use kairos::config::Config;
+use kairos::keybinds::{KeyBindings, ResolvedKey};
+use kairos::theme;
+use kairos::ui::hyperlinks;
+use kairos::{clipboard, todo, ui, update};
 
 const EVENT_POLL: Duration = Duration::from_millis(250);
 
@@ -24,7 +24,7 @@ fn main() -> Result<()> {
     let argv: Vec<String> = std::env::args().skip(1).collect();
     // A recognized subcommand (possibly preceded by `-f`/`--json`) runs the
     // one-shot CLI and exits; otherwise we fall through to the TUI.
-    if let Some(code) = tuxedo::cmd::run(&argv)? {
+    if let Some(code) = kairos::cmd::run(&argv)? {
         std::process::exit(code);
     }
     let arg = argv.first().cloned();
@@ -36,7 +36,7 @@ fn main() -> Result<()> {
             return Ok(());
         }
         Some("--version") | Some("-V") => {
-            println!("tuxedo {}", env!("CARGO_PKG_VERSION"));
+            println!("kairos {}", env!("CARGO_PKG_VERSION"));
             return Ok(());
         }
         Some("update") => {
@@ -45,8 +45,8 @@ fn main() -> Result<()> {
         }
         Some("--sample") => (cli::sample_path()?, Mode::Normal),
         Some(s) if s.starts_with('-') => {
-            eprintln!("tuxedo: unknown option: {s}");
-            eprintln!("try `tuxedo --help`");
+            eprintln!("kairos: unknown option: {s}");
+            eprintln!("try `kairos --help`");
             std::process::exit(2);
         }
         _ => match cli::resolve_target(arg)? {
@@ -95,15 +95,15 @@ fn main() -> Result<()> {
         0 => {}
         1 => app_state.flash(theme_warnings.into_iter().next().expect("len==1")),
         n => app_state.flash(format!(
-            "{n} theme(s) skipped — check ~/.config/tuxedo/themes/"
+            "{n} theme(s) skipped — check ~/.config/kairos/themes/"
         )),
     }
-    if std::env::var_os("TUXEDO_NO_UPDATE_CHECK").is_none() {
+    if std::env::var_os("KAIROS_NO_UPDATE_CHECK").is_none() {
         app_state.set_update_check(update::spawn_check());
     }
 
     let terminal = ratatui::init();
-    // Give the window/tab a consistent `tuxedo <path>` title across terminals
+    // Give the window/tab a consistent `kairos <path>` title across terminals
     // and operating systems, shortening long paths to fit a fixed budget.
     let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
     let title = ui::title::terminal_title(&path, home.as_deref(), ui::title::DEFAULT_BUDGET);
@@ -111,7 +111,7 @@ fn main() -> Result<()> {
     let result = run(terminal, &mut app_state, &keybinds);
     ratatui::restore();
     // Clear the title on exit so the shell retitles on its next prompt rather
-    // than leaving `tuxedo …` behind.
+    // than leaving `kairos …` behind.
     let _ = crossterm::execute!(io::stdout(), crossterm::terminal::SetTitle(""));
     // Print the file path *after* restoring the terminal so the message
     // survives in the user's scrollback rather than being eaten by the
@@ -119,15 +119,15 @@ fn main() -> Result<()> {
     // rebound to the sample. Skip the line if the user quit the welcome
     // prompt without choosing — no file was opened.
     if app_state.mode != Mode::Welcome {
-        eprintln!("tuxedo: {}", app_state.file_path.display());
+        eprintln!("kairos: {}", app_state.file_path.display());
     }
     result
 }
 
 fn print_usage() {
-    println!("usage: tuxedo [FILE]                 launch the TUI");
-    println!("       tuxedo <command> [args]       run a one-shot command");
-    println!("       tuxedo update");
+    println!("usage: kairos [FILE]                 launch the TUI");
+    println!("       kairos <command> [args]       run a one-shot command");
+    println!("       kairos update");
     println!();
     println!("Without FILE or a command, opens ./todo.txt if present; otherwise");
     println!("prompts to create ./todo.txt here or open a sample todo.txt, in");
@@ -152,7 +152,7 @@ fn print_usage() {
     println!("  listpri, lsp [PRIORITY]   list prioritized tasks");
     println!("  listproj, lsprj           list +projects");
     println!("  listcon, lsc              list @contexts");
-    println!("  update                    print instructions for upgrading tuxedo");
+    println!("  update                    print instructions for upgrading kairos");
     println!();
     println!("Options:");
     println!("  -f, --force      skip confirmation prompts (e.g. for del)");
@@ -741,7 +741,7 @@ fn handle_prompt(app: &mut App, key: KeyEvent) {
     }
 }
 
-// `Action` lives in `tuxedo::action` (see `src/action.rs`). Keeping it in the
+// `Action` lives in `kairos::action` (see `src/action.rs`). Keeping it in the
 // library lets the command palette enumerate every variant without pulling
 // main.rs into the dependency graph.
 
@@ -1118,7 +1118,7 @@ mod tests {
     use super::*;
     use chrono::NaiveDate;
     use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    use tuxedo::config::Config;
+    use kairos::config::Config;
 
     fn key(c: char) -> KeyEvent {
         KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
@@ -1134,7 +1134,7 @@ mod tests {
 
     fn welcome_app(name: &str) -> (App, std::path::PathBuf) {
         let path = std::env::temp_dir().join(format!(
-            "tuxedo-welcome-{name}-{}-{:?}.txt",
+            "kairos-welcome-{name}-{}-{:?}.txt",
             std::process::id(),
             std::thread::current().id()
         ));
@@ -1168,7 +1168,7 @@ mod tests {
         assert_eq!(app.mode, Mode::Normal);
         assert_ne!(app.file_path, path, "`s` rebinds away from the cwd target");
         assert!(
-            app.file_path.ends_with("tuxedo-sample.txt"),
+            app.file_path.ends_with("kairos-sample.txt"),
             "`s` opens the bundled sample, got {:?}",
             app.file_path
         );
@@ -1191,7 +1191,7 @@ mod tests {
 
     fn build_app() -> App {
         let path = std::env::temp_dir().join(format!(
-            "tuxedo-bindings-{}-{:?}.txt",
+            "kairos-bindings-{}-{:?}.txt",
             std::process::id(),
             std::thread::current().id()
         ));
@@ -1206,7 +1206,7 @@ mod tests {
 
     fn build_app_with_due() -> App {
         let path = std::env::temp_dir().join(format!(
-            "tuxedo-bindings-{}-{:?}.txt",
+            "kairos-bindings-{}-{:?}.txt",
             std::process::id(),
             std::thread::current().id()
         ));
@@ -1376,7 +1376,7 @@ mod tests {
         static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let dir =
-            std::env::temp_dir().join(format!("tuxedo-bindings-{}-{}", std::process::id(), n));
+            std::env::temp_dir().join(format!("kairos-bindings-{}-{}", std::process::id(), n));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("create test dir");
         let todo_path = dir.join("todo.txt");
