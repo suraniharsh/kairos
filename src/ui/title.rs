@@ -129,7 +129,7 @@ mod tests {
             Some(Path::new("/Users/m")),
             35,
         );
-        assert_eq!(title, "kairos ~/p/g/w/kairos/todo.txt");
+        assert_eq!(title, "kairos ~/p/g/s/kairos/todo.txt");
     }
 
     #[test]
@@ -139,7 +139,7 @@ mod tests {
             Some(Path::new("/Users/m")),
             10,
         );
-        assert_eq!(title, "kairos ~/p/g/w/t/todo.txt");
+        assert_eq!(title, "kairos ~/p/g/s/k/todo.txt");
     }
 
     #[test]

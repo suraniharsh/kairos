@@ -1,6 +1,5 @@
 ---
 source: tests/snapshots.rs
-assertion_line: 226
 expression: buffer_to_text(&buf)
 ---
  FILTERS                   ▶▮◀ /tmp/kairos-snapshot.txt  •  15 tas DETAIL                           
@@ -34,4 +33,4 @@ expression: buffer_to_text(&buf)
                                                                                                     
                                                                                                     
                                                                                                     
- COMMAND   type to filter · Enter run · Esc canc15 open · 2 selected · 2026-05-06 · kairos 0.1.6.3
+ COMMAND   type to filter · Enter run · Esc cancel 15 open · 2 selected · 2026-05-06 · kairos 0.1.0
