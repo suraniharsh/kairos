@@ -154,6 +154,7 @@ jobs:
           sha_linux_arm=$(fetch_sha aarch64-unknown-linux-gnu)
           sha_linux_intel=$(fetch_sha x86_64-unknown-linux-gnu)
 
+          mkdir -p tap/Formula
           cat > tap/Formula/kairos.rb <<EOF
           class Kairos < Formula
             desc "Fast, keyboard-driven terminal UI for todo.txt"
