@@ -202,10 +202,10 @@ jobs:
           cd tap
           git config user.name  "kairos-release-bot"
           git config user.email "actions@users.noreply.github.com"
-          if git diff --quiet Formula/kairos.rb; then
+          git add Formula/kairos.rb
+          if git diff --cached --quiet; then
             echo "Formula already up to date; nothing to commit."
             exit 0
           fi
-          git add Formula/kairos.rb
           git commit -m "kairos ${TAG}"
           git push
