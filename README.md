@@ -100,6 +100,12 @@ another theme is skipped with a warning at startup.
 
 ## Install
 
+### Homebrew (macOS / Linux)
+
+```sh
+brew install suraniharsh/tap/kairos
+```
+
 ### Prebuilt binaries
 
 Download the archive for your platform from the [latest release](https://github.com/suraniharsh/kairos/releases/latest) and put `kairos` on your `PATH`.
