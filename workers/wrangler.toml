@@ -3,5 +3,5 @@ main = "src/index.js"
 compatibility_date = "2024-01-01"
 
 routes = [
-  { pattern = "kairos.suraniharsh.com/*", custom_domain = true }
+  { pattern = "kairos.suraniharsh.com", custom_domain = true }
 ]
