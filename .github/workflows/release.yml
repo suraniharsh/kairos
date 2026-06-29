@@ -115,11 +115,13 @@ jobs:
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         with:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           name: ${{ github.event.inputs.tag || github.ref_name }}
           prerelease: ${{ contains(github.event.inputs.tag || github.ref_name, '-') }}
-          generate_release_notes: true
+          body_path: release-notes/${{ github.event.inputs.tag || github.ref_name }}.md
           fail_on_unmatched_files: true
           files: |
             dist/*.tar.gz
