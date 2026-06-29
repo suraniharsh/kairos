@@ -5,7 +5,7 @@ edition = "2024"
 authors = ["suraniharsh <harshsurani00@gmail.com>"]
 description = "A terminal-based task logger and time tracker"
 license = "MIT"
-repository = "https://github.com/suraniharsh/ritual-tui"
+repository = "https://github.com/suraniharsh/kairos"
 
 [dependencies]
 anyhow = "1.0"
