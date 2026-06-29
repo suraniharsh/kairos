@@ -100,6 +100,18 @@ another theme is skipped with a warning at startup.
 
 ## Install
 
+### Linux / macOS
+
+```sh
+curl -fsSL https://kairos.suraniharsh.com/install.sh | bash
+```
+
+### Windows (PowerShell)
+
+```powershell
+irm https://kairos.suraniharsh.com/install.ps1 | iex
+```
+
 ### Homebrew (macOS / Linux)
 
 ```sh
