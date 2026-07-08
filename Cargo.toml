@@ -1,6 +1,6 @@
 [package]
 name = "kairos"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2024"
 authors = ["suraniharsh <harshsurani00@gmail.com>"]
 description = "A terminal-based task logger and time tracker"
