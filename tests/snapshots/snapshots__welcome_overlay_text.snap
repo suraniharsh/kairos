@@ -33,4 +33,4 @@ expression: buffer_to_text(&buf)
                                                                                                     
                                                                                                     
                                                                                                     
- WELCOME   c create ./todo.txt · s open sample · q quit          0 open · 2026-05-06 · kairos 0.3.0
+ WELCOME   c create ./todo.txt · s open sample · q quit          0 open · 2026-05-06 · kairos 0.3.1
