@@ -10,10 +10,16 @@
 //! 2. [`spawn_check`] — background thread invoked at TUI startup that consults
 //!    a cache under `$XDG_CACHE_HOME/kairos/latest_version.json`. If the cache
 //!    is missing or older than 24h, it shells out to `curl` to read the
-//!    `tag_name` of the latest GitHub release, rewrites the cache, and returns
-//!    the tag through an mpsc channel. The TUI's status bar reads it and
-//!    appends an `↑ <version>` hint when newer than the running build. All
-//!    failures are silent — a stale or missing cache simply means no hint.
+//!    latest version from the `kairos.suraniharsh.com/version` Worker (which
+//!    proxies the GitHub releases API), rewrites the cache, and returns the
+//!    tag through an mpsc channel. The TUI's status bar reads it and appends
+//!    an `↑ <version>` hint when newer than the running build. All failures
+//!    are silent — a stale or missing cache simply means no hint.
+//!
+//! 3. [`maybe_print_cli_notice`] — the one-shot CLI's equivalent: it only
+//!    reads whatever the cache already holds (no network call, since the
+//!    process exits before a background fetch could land) and prints a
+//!    stderr line when it names a newer version.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -111,6 +117,27 @@ pub fn spawn_check() -> Receiver<Option<String>> {
     rx
 }
 
+/// For one-shot CLI commands: print a short notice to stderr if the cache
+/// already names a newer version. Does not touch the network — a CLI
+/// invocation exits as soon as its command finishes, too quickly for a
+/// background fetch (see [`spawn_check`]) to land, so this only benefits
+/// from a cache the TUI has warmed on a previous run.
+pub fn maybe_print_cli_notice() {
+    let Some(cache_path) = cache_path() else {
+        return;
+    };
+    let Some((ts, tag)) = read_cache(&cache_path) else {
+        return;
+    };
+    if tag.is_empty() || now_epoch().saturating_sub(ts) >= CACHE_TTL.as_secs() {
+        return;
+    }
+    let current = env!("CARGO_PKG_VERSION");
+    if is_newer(&tag, current) {
+        eprintln!("kairos: new version {tag} available — run `kairos update`");
+    }
+}
+
 const CACHE_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 /// How long to honor a cached *failure* (empty `tag`) before trying the
 /// network again. Short enough to recover within an hour, long enough to
@@ -118,7 +145,10 @@ const CACHE_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 /// (which is what burned us once during testing).
 const NEGATIVE_CACHE_TTL: Duration = Duration::from_secs(60 * 60);
 const CURL_TIMEOUT_SECS: u64 = 5;
-const RELEASE_URL: &str = "https://api.github.com/repos/suraniharsh/kairos/releases/latest";
+// Proxied through the kairos.suraniharsh.com Worker rather than hitting the
+// GitHub API directly, so anonymous clients don't share GitHub's per-IP rate
+// limit (see NEGATIVE_CACHE_TTL) and the response can be edge-cached.
+const RELEASE_URL: &str = "https://kairos.suraniharsh.com/version";
 
 fn check_for_update() -> Option<String> {
     let cache_path = cache_path();
@@ -140,7 +170,7 @@ fn check_for_update() -> Option<String> {
     // Cache is stale, missing, or expired-negative — try the network. Cache
     // either outcome so we don't retry on every launch when offline or
     // rate-limited.
-    let tag = fetch_latest_body().and_then(|b| parse_tag_from_release_json(&b));
+    let tag = fetch_latest_body().and_then(|b| parse_version_from_worker_json(&b));
     if let Some(p) = &cache_path {
         let _ = write_cache(p, now, tag.as_deref().unwrap_or(""));
     }
@@ -153,8 +183,6 @@ fn fetch_latest_body() -> Option<String> {
             "-fsSL",
             "-m",
             &CURL_TIMEOUT_SECS.to_string(),
-            "-H",
-            "Accept: application/vnd.github+json",
             "-A",
             concat!("kairos/", env!("CARGO_PKG_VERSION")),
             RELEASE_URL,
@@ -167,12 +195,12 @@ fn fetch_latest_body() -> Option<String> {
     String::from_utf8(out.stdout).ok()
 }
 
-/// Pull the `tag_name` value out of a GitHub release JSON payload. Doesn't
-/// pull in a JSON parser — release payloads are well-formed enough that a
+/// Pull the `version` value out of the Worker's `{"version": "..."}` payload.
+/// Doesn't pull in a JSON parser — the payload is well-formed enough that a
 /// targeted string scan suffices, and a malformed payload simply returns
 /// `None`. Exposed for unit testing.
-pub fn parse_tag_from_release_json(body: &str) -> Option<String> {
-    let key = "\"tag_name\"";
+pub fn parse_version_from_worker_json(body: &str) -> Option<String> {
+    let key = "\"version\"";
     let i = body.find(key)?;
     let rest = &body[i + key.len()..];
     let colon = rest.find(':')?;
@@ -368,33 +396,32 @@ mod tests {
     }
 
     #[test]
-    fn parse_tag_extracts_first_tag_name() {
-        let body = r#"{"url":"x","tag_name":"v2026.5.5","name":"2026.5.5"}"#;
+    fn parse_version_extracts_from_worker_payload() {
+        let body = r#"{"version":"v2026.5.5"}"#;
         assert_eq!(
-            parse_tag_from_release_json(body).as_deref(),
+            parse_version_from_worker_json(body).as_deref(),
             Some("v2026.5.5")
         );
     }
 
     #[test]
-    fn parse_tag_with_whitespace_and_extra_keys() {
+    fn parse_version_with_whitespace_and_extra_keys() {
         let body = r#"
         {
-          "url": "x",
-          "tag_name" : "2026.5.10" ,
-          "draft": false
+          "version" : "2026.5.10" ,
+          "cached": false
         }
         "#;
         assert_eq!(
-            parse_tag_from_release_json(body).as_deref(),
+            parse_version_from_worker_json(body).as_deref(),
             Some("2026.5.10")
         );
     }
 
     #[test]
-    fn parse_tag_returns_none_on_missing_field() {
-        let body = r#"{"name":"hi"}"#;
-        assert!(parse_tag_from_release_json(body).is_none());
+    fn parse_version_returns_none_on_missing_field() {
+        let body = r#"{"error":"upstream error"}"#;
+        assert!(parse_version_from_worker_json(body).is_none());
     }
 
     #[test]

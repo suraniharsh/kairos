@@ -160,7 +160,9 @@ kairos --version
 When a newer release is available, the status bar shows `↑ <version> (kairos
 update)` next to the version. The check runs in the background, is cached at
 `$XDG_CACHE_HOME/kairos/latest_version.json` for 24 h, and fails silently
-when offline. Set `KAIROS_NO_UPDATE_CHECK=1` to disable.
+when offline. One-shot CLI commands print the same notice to stderr before
+their output, reading only the cache — no network call, since the process
+exits before a fetch could land. Set `KAIROS_NO_UPDATE_CHECK=1` to disable.
 
 ### Which file kairos opens
 

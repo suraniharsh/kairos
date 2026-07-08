@@ -83,6 +83,10 @@ pub fn run(argv: &[String]) -> Result<Option<i32>> {
         }
     };
 
+    if std::env::var_os("KAIROS_NO_UPDATE_CHECK").is_none() {
+        crate::update::maybe_print_cli_notice();
+    }
+
     // todo.sh-style path resolution via $TODO_FILE / $TODO_DIR / $DONE_FILE.
     let path = crate::cli::resolve_path(None).context("resolving todo file")?;
     let done = crate::cli::done_path(&path);
